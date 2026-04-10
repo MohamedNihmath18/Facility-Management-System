@@ -21,14 +21,18 @@ async function startServer() {
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5173',
-    process.env.FRONTEND_URL // Netlify URL will go here
+    process.env.FRONTEND_URL
   ].filter(Boolean) as string[];
 
   app.use(cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.some(allowed => origin.startsWith(allowed) || allowed === origin)) {
         callback(null, true);
       } else {
+        console.warn(`🚫 CORS blocked for origin: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
@@ -78,67 +82,67 @@ async function startServer() {
       if (userCount === 0) {
         console.log('🌱 Seeding initial data...');
         
-        const hashedPassword = await bcrypt.hash('qwerty', 10);
+        const hashedPassword = await bcrypt.hash('password123', 10);
 
         const admin = await User.create({
-          name: 'IT Admin',
+          name: 'Supervisor Mark',
           username: 'admin',
-          email: 'it@mahsahospital.com',
+          email: 'mark@mahsa.edu.my',
           password: hashedPassword,
           role: 'admin',
           department: 'Facilities',
           avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mark'
         });
 
-        // const manager = await User.create({
-        //   name: 'Facility Manager Alex',
-        //   username: 'manager',
-        //   email: 'alex@mahsa.edu.my',
-        //   password: hashedPassword,
-        //   role: 'manager',
-        //   department: 'Management',
-        //   avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex'
-        // });
+        const manager = await User.create({
+          name: 'Facility Manager Alex',
+          username: 'manager',
+          email: 'alex@mahsa.edu.my',
+          password: hashedPassword,
+          role: 'manager',
+          department: 'Management',
+          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex'
+        });
 
-        // const tech = await User.create({
-        //   name: 'Mike Johnson',
-        //   username: 'mike',
-        //   email: 'mike@mahsa.edu.my',
-        //   password: hashedPassword,
-        //   role: 'technician',
-        //   department: 'Medical Equipment',
-        //   avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike'
-        // });
+        const tech = await User.create({
+          name: 'Mike Johnson',
+          username: 'mike',
+          email: 'mike@mahsa.edu.my',
+          password: hashedPassword,
+          role: 'technician',
+          department: 'Medical Equipment',
+          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike'
+        });
 
         await WorkRequest.create([
-          // {
-          //   wrId: 'WR-2026-001',
-          //   userId: admin._id,
-          //   userName: 'Dr. Sarah Ahmad',
-          //   department: 'Cardiology',
-          //   block: 'Block A',
-          //   floor: '3rd Floor',
-          //   room: 'Room 305',
-          //   location: 'Block A, 3rd Floor, Room 305',
-          //   category: 'Medical Equipment',
-          //   priority: 'CRITICAL',
-          //   status: 'IN PROGRESS',
-          //   description: 'Defibrillator not charging'
-          // },
-          // {
-          //   wrId: 'WR-2026-002',
-          //   userId: admin._id,
-          //   userName: 'Nurse Maria Santos',
-          //   department: 'Emergency',
-          //   block: 'Block B',
-          //   floor: '1st Floor',
-          //   room: 'ER-2',
-          //   location: 'Block B, 1st Floor, ER-2',
-          //   category: 'HVAC',
-          //   priority: 'HIGH',
-          //   status: 'ASSIGNED',
-          //   description: 'AC leaking water'
-          // }
+          {
+            wrId: 'WR-2026-001',
+            userId: admin._id,
+            userName: 'Dr. Sarah Ahmad',
+            department: 'Cardiology',
+            block: 'Block A',
+            floor: '3rd Floor',
+            room: 'Room 305',
+            location: 'Block A, 3rd Floor, Room 305',
+            category: 'Medical Equipment',
+            priority: 'CRITICAL',
+            status: 'IN PROGRESS',
+            description: 'Defibrillator not charging'
+          },
+          {
+            wrId: 'WR-2026-002',
+            userId: admin._id,
+            userName: 'Nurse Maria Santos',
+            department: 'Emergency',
+            block: 'Block B',
+            floor: '1st Floor',
+            room: 'ER-2',
+            location: 'Block B, 1st Floor, ER-2',
+            category: 'HVAC',
+            priority: 'HIGH',
+            status: 'ASSIGNED',
+            description: 'AC leaking water'
+          }
         ]);
         console.log('✅ Seeding complete');
       }
