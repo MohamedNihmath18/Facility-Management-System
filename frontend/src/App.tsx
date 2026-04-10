@@ -2539,12 +2539,12 @@ const LoginView = ({ onLogin }: { onLogin: (user: User) => void }) => {
             <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
-            <div className="text-center text-xs text-muted-foreground">
+           {/* <div className="text-center text-xs text-muted-foreground">
               <p>Demo accounts:</p>
               <p>Admin: admin / password123</p>
               <p>Manager: manager / password123</p>
               <p>Tech: mike / password123</p>
-            </div>
+            </div> */}
           </form>
         </CardContent>
       </Card>
