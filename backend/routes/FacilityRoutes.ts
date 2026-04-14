@@ -7,6 +7,7 @@ import {
   getAllUsers,
   createUser,
   updateUser,
+  deleteUser,
   getAllWorkOrders,
   createWorkOrder,
   updateWorkOrder,
@@ -25,6 +26,7 @@ router.get('/stats', getStats);
 router.get('/users', getAllUsers);
 router.post('/users', createUser);
 router.patch('/users/:id', updateUser);
+router.delete('/users/:id', deleteUser);
 
 // Work Requests
 router.get('/work-requests', getAllWorkRequests);
