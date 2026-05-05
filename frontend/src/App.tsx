@@ -474,7 +474,8 @@ const TechnicianDashboard = ({ requests = [], orders = [], user, onSelectRequest
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-blue-600 cursor-pointer hover:underline" onClick={() => {
                         const req = requests.find(r => r.wrId === task.wrId);
-                        if (req) onSelectRequest(req._id);
+                        if (req) onSelectRequest(String(req._id));
+                        else toast.error("Could not find source request");
                       }}>
                         {task.wrId}
                       </span>
@@ -487,7 +488,8 @@ const TechnicianDashboard = ({ requests = [], orders = [], user, onSelectRequest
                   </div>
                   <Button size="sm" variant="outline" onClick={() => {
                     const req = requests.find(r => r.wrId === task.wrId);
-                    if (req) onSelectRequest(req._id);
+                    if (req) onSelectRequest(String(req._id));
+                    else toast.error("Could not find source request");
                   }}>
                     View Details
                   </Button>
@@ -544,7 +546,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user }:
 
   // Filter requests based on role for the table
   const tableRequests = user?.role === 'staff' 
-    ? safeRequests.filter(r => r.userId === user._id)
+    ? safeRequests.filter(r => String(r.userId) === String(user._id))
     : safeRequests;
 
   if (user?.role === 'technician') {
@@ -771,7 +773,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
 
   const safeRequests = Array.isArray(requests) ? requests : [];
   const displayRequests = user?.role === 'staff'
-    ? safeRequests.filter(r => r.userId === user._id)
+    ? safeRequests.filter(r => String(r.userId) === String(user._id))
     : safeRequests;
 
   const handleSort = (key: string) => {
@@ -2045,13 +2047,19 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
             </TableHeader>
             <TableBody>
               {sortedOrders.map((wo) => {
-                const linkedRequest = requests.find(r => r.wrId === wo.wrId);
+                const linkedRequest = requests.find(r => String(r.wrId) === String(wo.wrId));
                 return (
                   <TableRow key={wo._id}>
                     <TableCell className="font-medium">{wo.woId}</TableCell>
                     <TableCell 
                       className="text-blue-600 cursor-pointer hover:underline"
-                      onClick={() => linkedRequest && onSelectRequest(linkedRequest._id)}
+                      onClick={() => {
+                        if (linkedRequest) {
+                          onSelectRequest(String(linkedRequest._id));
+                        } else {
+                          toast.error(`Could not find request details for ${wo.wrId}`);
+                        }
+                      }}
                     >
                       {wo.wrId}
                     </TableCell>
@@ -2069,7 +2077,19 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end items-center gap-2">
-                        <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 h-8 w-8" onClick={() => linkedRequest && onSelectRequest(linkedRequest._id)} title="View Linked Request">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="text-blue-500 hover:text-blue-700 h-8 w-8" 
+                          onClick={() => {
+                            if (linkedRequest) {
+                              onSelectRequest(String(linkedRequest._id));
+                            } else {
+                              toast.error(`Could not find request details for ${wo.wrId}`);
+                            }
+                          }} 
+                          title="View Linked Request"
+                        >
                           <Eye size={16} />
                         </Button>
                         {wo.status === 'ASSIGNED' && (
@@ -3011,18 +3031,24 @@ export default function App() {
       
       if (statsData && !statsData.error) {
         setStats(statsData);
+      } else if (statsData.error) {
+        console.error('Stats API Error:', statsData);
       }
       
       if (Array.isArray(requestsData)) {
         setRequests(requestsData);
       } else {
+        console.error('Requests Data is not an array:', requestsData);
         setRequests([]);
+        if (requestsData.error) toast.error(`Failed to load requests: ${requestsData.error}`);
       }
 
       if (Array.isArray(ordersData)) {
         setOrders(ordersData);
       } else {
+        console.error('Orders Data is not an array:', ordersData);
         setOrders([]);
+        if (ordersData.error) toast.error(`Failed to load orders: ${ordersData.error}`);
       }
     } catch (err) {
       console.error('Failed to fetch data:', err);
@@ -3063,14 +3089,21 @@ export default function App() {
     return <LoginView onLogin={handleLogin} />;
   }
 
+  const handleSelectRequest = (id: string) => {
+    console.log(`🔍 Selecting request: ${id}`);
+    setSelectedRequestId(id);
+    setView('work-request-detail');
+  };
+
   const renderView = () => {
     switch (view) {
       case 'dashboard':
-        return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} user={user} />;
+        return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={handleSelectRequest} user={user} />;
       case 'work-requests':
-        return <WorkRequestsView requests={requests} user={user} onRefresh={fetchData} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} />;
+        return <WorkRequestsView requests={requests} user={user} onRefresh={fetchData} onSelectRequest={handleSelectRequest} />;
       case 'work-request-detail':
-        const selectedReq = requests.find(r => r._id === selectedRequestId);
+        const selectedReq = requests.find(r => String(r._id) === String(selectedRequestId));
+        console.log(`📄 Detail view for:`, selectedReq?.wrId || 'Unknown');
         return <WorkRequestDetailView 
           request={selectedReq} 
           onBack={() => {
@@ -3084,10 +3117,10 @@ export default function App() {
           user={user} 
         />;
       case 'work-orders':
-        return <WorkOrdersView requests={requests} orders={orders} onRefresh={fetchData} user={user} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} />;
+        return <WorkOrdersView requests={requests} orders={orders} onRefresh={fetchData} user={user} onSelectRequest={handleSelectRequest} />;
       case 'reports':
         if (user?.role !== 'admin' && user?.role !== 'manager') {
-          return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} user={user} />;
+          return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={handleSelectRequest} user={user} />;
         }
         return <ReportsView stats={stats} requests={requests} orders={orders} user={user} />;
       case 'user-management':
@@ -3097,7 +3130,7 @@ export default function App() {
       case 'settings':
         return <SettingsView user={user} />;
       default:
-        return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} user={user} />;
+        return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={handleSelectRequest} user={user} />;
     }
   };
 

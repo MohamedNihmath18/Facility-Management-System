@@ -49,17 +49,19 @@ async function startServer() {
     
     mongoose.connect(MONGODB_URI)
       .then(() => {
-        console.log('✅ Connected to MongoDB');
+        console.log('✅ Connected to MongoDB successfully');
         isDbConnected = true;
         seedData().catch(err => console.error('❌ Seeding error:', err));
       })
       .catch(err => {
+        isDbConnected = false;
         console.error('❌ MongoDB connection error:', err.message);
-        if (err.message.includes('ECONNREFUSED') && (MONGODB_URI.includes('127.0.0.1') || MONGODB_URI.includes('localhost'))) {
-          console.warn('💡 Tip: Your MONGODB_URI is pointing to localhost, but MongoDB might not be running locally in this environment.');
-          console.warn('   If you are using AI Studio Build, please provide a remote MongoDB URI (like MongoDB Atlas) in the Secrets panel.');
+        if (err.message.includes('ECONNREFUSED')) {
+          console.error('   CRITICAL: MongoDB connection refused. Ensure your MONGODB_URI is correct and the database is accessible.');
+          if (MONGODB_URI.includes('127.0.0.1') || MONGODB_URI.includes('localhost')) {
+            console.warn('   NOTE: You are trying to connect to a local database, which is likely not hosted on this server.');
+          }
         }
-        console.log('Running in limited mode without database persistence.');
       });
   } else {
     console.warn('⚠️ MONGODB_URI not found in environment variables.');
@@ -100,7 +102,7 @@ async function startServer() {
       if (userCount === 0) {
         console.log('🌱 Seeding initial data...');
         
-        const hashedPassword = await bcrypt.hash('qwerty', 10);
+        const hashedPassword = await bcrypt.hash('password123', 10);
 
         const admin = await User.create({
           name: 'Supervisor Mark',
