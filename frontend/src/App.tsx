@@ -308,7 +308,7 @@ const Header = ({ title, user, onSignOut, setView, onMenuClick }: { title: strin
         </Button>
         <div>
           <h2 className="text-lg lg:text-xl font-bold truncate max-w-[150px] lg:max-w-none">{title}</h2>
-          <p className="hidden sm:block text-xs text-muted-foreground">Wednesday, April 8, 2026</p>
+          <p className="hidden sm:block text-xs text-muted-foreground">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
       </div>
       <div className="flex items-center gap-4">
@@ -2541,12 +2541,12 @@ const LoginView = ({ onLogin }: { onLogin: (user: User) => void }) => {
             <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
-            {/* <div className="text-center text-xs text-muted-foreground">
+            <div className="text-center text-xs text-muted-foreground">
               <p>Demo accounts:</p>
               <p>Admin: admin / password123</p>
               <p>Manager: manager / password123</p>
               <p>Tech: mike / password123</p>
-            </div> */}
+            </div>
           </form>
         </CardContent>
       </Card>
