@@ -124,12 +124,14 @@ interface WorkRequest {
   status: string;
   description: string;
   imageUrl?: string;
+  videoUrl?: string;
   activities?: {
     action: string;
     user: string;
     timestamp: string;
     note?: string;
     imageUrl?: string;
+    videoUrl?: string;
   }[];
   createdAt: string;
 }
@@ -735,7 +737,8 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
     category: '',
     priority: 'MEDIUM',
     description: '',
-    imageUrl: ''
+    imageUrl: '',
+    videoUrl: ''
   });
 
   const fetchCategories = async () => {
@@ -817,6 +820,22 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
     }
   };
 
+  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 20 * 1024 * 1024) { // 20MB limit
+        alert('Video size exceeds 20MB limit. Please choose a smaller file.');
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewRequest(prev => ({ ...prev, videoUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -846,7 +865,8 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
           category: '', 
           priority: 'MEDIUM', 
           description: '', 
-          imageUrl: '' 
+          imageUrl: '',
+          videoUrl: ''
         });
       }
     } catch (err) {
@@ -1009,9 +1029,9 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="image">Attach Image (Optional)</Label>
-                <div className="flex items-center gap-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="image">Attach Image (Optional)</Label>
                   <Input 
                     id="image"
                     type="file" 
@@ -1019,19 +1039,43 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                     onChange={handleFileChange}
                     className="cursor-pointer"
                   />
+                  {newRequest.imageUrl && (
+                    <div className="mt-2 relative w-20 h-20 border rounded overflow-hidden">
+                      <img src={newRequest.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <button 
+                        type="button"
+                        onClick={() => setNewRequest(prev => ({ ...prev, imageUrl: '' }))}
+                        className="absolute top-0 right-0 bg-red-500 text-white p-1 rounded-bl text-[10px]"
+                      >
+                        X
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {newRequest.imageUrl && (
-                  <div className="mt-2 relative w-20 h-20 border rounded overflow-hidden">
-                    <img src={newRequest.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                    <button 
-                      type="button"
-                      onClick={() => setNewRequest(prev => ({ ...prev, imageUrl: '' }))}
-                      className="absolute top-0 right-0 bg-red-500 text-white p-1 rounded-bl text-[10px]"
-                    >
-                      X
-                    </button>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <Label htmlFor="video">Attach Video (Optional)</Label>
+                  <Input 
+                    id="video"
+                    type="file" 
+                    accept="video/*"
+                    onChange={handleVideoChange}
+                    className="cursor-pointer"
+                  />
+                  {newRequest.videoUrl && (
+                    <div className="mt-2 relative w-20 h-20 border rounded overflow-hidden">
+                      <div className="w-full h-full bg-slate-900 flex items-center justify-center">
+                        <Video size={16} className="text-white" />
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setNewRequest(prev => ({ ...prev, videoUrl: '' }))}
+                        className="absolute top-0 right-0 bg-red-500 text-white p-1 rounded-bl text-[10px]"
+                      >
+                        X
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <DialogFooter className="gap-2 sm:gap-0">
@@ -1115,9 +1159,13 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                       <div className="w-10 h-10 rounded border overflow-hidden">
                         <img src={req.imageUrl} alt="Request" className="w-full h-full object-cover" />
                       </div>
+                    ) : req.videoUrl ? (
+                      <div className="w-10 h-10 rounded border bg-slate-900 flex items-center justify-center text-white">
+                        <Video size={16} />
+                      </div>
                     ) : (
-                      <div className="w-10 h-10 rounded border bg-gray-50 flex items-center justify-center text-[10px] text-gray-400">
-                        No Image
+                      <div className="w-10 h-10 rounded border bg-gray-50 flex items-center justify-center text-[8px] text-gray-400 text-center leading-tight">
+                        No<br/>Attachment
                       </div>
                     )}
                   </TableCell>
@@ -1165,6 +1213,7 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
   const [selectedTech, setSelectedTech] = useState<string>('');
   const [updateNote, setUpdateNote] = useState('');
   const [updateImage, setUpdateImage] = useState<string | null>(null);
+  const [updateVideo, setUpdateVideo] = useState<string | null>(null);
   const [isPosting, setIsPosting] = useState(false);
 
   useEffect(() => {
@@ -1234,7 +1283,7 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
 
   const handleAddActivity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!updateNote.trim() && !updateImage) return;
+    if (!updateNote.trim() && !updateImage && !updateVideo) return;
 
     setIsPosting(true);
     try {
@@ -1243,7 +1292,8 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
         user: user?.name || 'User',
         timestamp: new Date(),
         note: updateNote,
-        imageUrl: updateImage || undefined
+        imageUrl: updateImage || undefined,
+        videoUrl: updateVideo || undefined
       };
 
       const res = await fetch(`${API_BASE_URL}/api/work-requests/${request._id}`, {
@@ -1255,6 +1305,7 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
       if (res.ok) {
         setUpdateNote('');
         setUpdateImage(null);
+        setUpdateVideo(null);
         onRefresh();
       }
     } catch (err) {
@@ -1395,16 +1446,27 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
             </CardContent>
           </Card>
 
-          {/* Attachment */}
-          {request.imageUrl && (
+          {/* Attachments */}
+          {(request.imageUrl || request.videoUrl) && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base font-semibold">Initial Attachment</CardTitle>
+                <CardTitle className="text-base font-semibold">Initial Attachments</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="rounded-lg border overflow-hidden bg-gray-50">
-                  <img src={request.imageUrl} alt="Request Attachment" className="w-full h-auto max-h-[500px] object-contain mx-auto" />
-                </div>
+              <CardContent className="space-y-4">
+                {request.imageUrl && (
+                  <div className="rounded-lg border overflow-hidden bg-gray-50">
+                    <img src={request.imageUrl} alt="Request Attachment" className="w-full h-auto max-h-[500px] object-contain mx-auto" />
+                  </div>
+                )}
+                {request.videoUrl && (
+                  <div className="rounded-lg border overflow-hidden bg-black aspect-video flex items-center justify-center">
+                    <video 
+                      src={request.videoUrl} 
+                      controls 
+                      className="w-full h-full max-h-[500px]"
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1427,42 +1489,76 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <Label htmlFor="update-image" className="cursor-pointer flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
-                      <Camera size={18} />
-                      <span>{updateImage ? 'Change Image' : 'Add Image'}</span>
-                      <input 
-                        id="update-image" 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => setUpdateImage(reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                      />
-                    </Label>
-                    {updateImage && (
-                      <Button type="button" variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setUpdateImage(null)}>Remove</Button>
-                    )}
+                    <div className="flex items-center gap-4">
+                      <Label htmlFor="update-image" className="cursor-pointer flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
+                        <Camera size={18} />
+                        <span>{updateImage ? 'Img Added' : 'Add Image'}</span>
+                        <input 
+                          id="update-image" 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => setUpdateImage(reader.result as string);
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </Label>
+                      {updateImage && (
+                        <Button type="button" variant="ghost" size="sm" className="p-1 h-auto text-red-500 hover:text-red-600" onClick={() => setUpdateImage(null)}><X size={14} /></Button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4 border-l pl-4">
+                      <Label htmlFor="update-video" className="cursor-pointer flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
+                        <Video size={18} />
+                        <span>{updateVideo ? 'Vid Added' : 'Add Video'}</span>
+                        <input 
+                          id="update-video" 
+                          type="file" 
+                          accept="video/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 20 * 1024 * 1024) {
+                                alert('Video exceeds 20MB limit');
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onloadend = () => setUpdateVideo(reader.result as string);
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </Label>
+                      {updateVideo && (
+                        <Button type="button" variant="ghost" size="sm" className="p-1 h-auto text-red-500 hover:text-red-600" onClick={() => setUpdateVideo(null)}><X size={14} /></Button>
+                      )}
+                    </div>
                   </div>
-                  <Button type="submit" disabled={isPosting || (!updateNote.trim() && !updateImage)} className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2 px-6">
+                  <Button type="submit" disabled={isPosting || (!updateNote.trim() && !updateImage && !updateVideo)} className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2 px-6">
                     <Send size={16} />
                     {isPosting ? 'Posting...' : 'Post Update'}
                   </Button>
                 </div>
 
-                {updateImage && (
-                  <div className="mt-4 relative w-32 h-32 rounded-md border overflow-hidden group">
-                    <img src={updateImage} alt="Preview" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <p className="text-white text-[10px] font-medium">Preview</p>
+                <div className="flex gap-4">
+                  {updateImage && (
+                    <div className="mt-4 relative w-24 h-24 rounded-md border overflow-hidden group">
+                      <img src={updateImage} alt="Preview" className="w-full h-full object-cover" />
                     </div>
-                  </div>
-                )}
+                  )}
+                  {updateVideo && (
+                    <div className="mt-4 relative w-24 h-24 rounded-md border overflow-hidden bg-slate-900 flex items-center justify-center">
+                      <Video size={20} className="text-white" />
+                    </div>
+                  )}
+                </div>
               </form>
             </CardContent>
           </Card>
@@ -1489,16 +1585,27 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                         <div className="space-y-2 flex-1">
                           <p className="text-sm font-semibold">{activity.action}</p>
                           <p className="text-xs text-muted-foreground leading-relaxed">{activity.note} by <span className="font-medium text-gray-700">{activity.user}</span></p>
-                          {activity.imageUrl && (
-                            <div className="mt-3 rounded-lg border overflow-hidden max-w-sm bg-gray-50">
-                              <img 
-                                src={activity.imageUrl} 
-                                alt="Activity attachment" 
-                                className="w-full h-auto max-h-[300px] object-contain" 
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
-                          )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                            {activity.imageUrl && (
+                              <div className="rounded-lg border overflow-hidden bg-gray-50">
+                                <img 
+                                  src={activity.imageUrl} 
+                                  alt="Activity attachment" 
+                                  className="w-full h-auto max-h-[300px] object-contain" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            )}
+                            {activity.videoUrl && (
+                              <div className="rounded-lg border overflow-hidden bg-black aspect-video flex items-center justify-center">
+                                <video 
+                                  src={activity.videoUrl} 
+                                  controls 
+                                  className="w-full h-full max-h-[300px]" 
+                                />
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <p className="text-[10px] font-medium text-muted-foreground bg-gray-50 px-2 py-1 rounded border">
                           {new Date(activity.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -2788,12 +2895,12 @@ const LoginView = ({ onLogin }: { onLogin: (user: User) => void }) => {
             <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
-            <div className="text-center text-xs text-muted-foreground">
+            {/* <div className="text-center text-xs text-muted-foreground">
               <p>Demo accounts:</p>
               <p>Admin: admin / password123</p>
               <p>Manager: manager / password123</p>
               <p>Tech: mike / password123</p>
-            </div>
+            </div> */}
           </form>
         </CardContent>
       </Card>

@@ -31,12 +31,14 @@ const WorkRequestSchema = new mongoose.Schema({
   },
   description: String,
   imageUrl: String,
+  videoUrl: String,
   activities: [{
     action: String,
     user: String,
     timestamp: { type: Date, default: Date.now },
     note: String,
-    imageUrl: String
+    imageUrl: String,
+    videoUrl: String
   }],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
