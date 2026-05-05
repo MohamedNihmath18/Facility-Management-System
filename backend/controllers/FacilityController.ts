@@ -37,8 +37,9 @@ export const getAllUsers = async (req: Request, res: Response) => {
   try {
     const users = await User.find().select('-password').sort({ createdAt: -1 });
     res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch users' });
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch users: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch users', details: err.message });
   }
 };
 
@@ -172,10 +173,13 @@ export const getStats = async (req: Request, res: Response) => {
 // --- Work Request Controller ---
 export const getAllWorkRequests = async (req: Request, res: Response) => {
   try {
+    console.log('🔍 Fetching all work requests...');
     const requests = await WorkRequest.find().sort({ createdAt: -1 });
+    console.log(`✅ Found ${requests.length} work requests`);
     res.json(requests);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch work requests' });
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch work requests: ${err.message}`, err);
+    res.status(500).json({ error: 'Failed to fetch work requests', details: err.message });
   }
 };
 
@@ -308,8 +312,9 @@ export const getAllWorkOrders = async (req: Request, res: Response) => {
   try {
     const orders = await WorkOrder.find().sort({ createdAt: -1 });
     res.json(orders);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch work orders' });
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch work orders: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch work orders', details: err.message });
   }
 };
 
@@ -475,8 +480,9 @@ export const getAllCategories = async (req: Request, res: Response) => {
   try {
     const categories = await Category.find().sort({ name: 1 });
     res.json(categories);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch categories' });
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch categories: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch categories', details: err.message });
   }
 };
 

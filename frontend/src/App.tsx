@@ -473,7 +473,7 @@ const TechnicianDashboard = ({ requests = [], orders = [], user, onSelectRequest
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-blue-600 cursor-pointer hover:underline" onClick={() => {
-                        const req = requests.find(r => r.wrId === task.wrId);
+                        const req = requests.find(r => String(r.wrId) === String(task.wrId));
                         if (req) onSelectRequest(String(req._id));
                         else toast.error("Could not find source request");
                       }}>
@@ -487,7 +487,7 @@ const TechnicianDashboard = ({ requests = [], orders = [], user, onSelectRequest
                     <p className="text-xs text-muted-foreground">Assigned: {new Date(task.createdAt).toLocaleDateString()}</p>
                   </div>
                   <Button size="sm" variant="outline" onClick={() => {
-                    const req = requests.find(r => r.wrId === task.wrId);
+                    const req = requests.find(r => String(r.wrId) === String(task.wrId));
                     if (req) onSelectRequest(String(req._id));
                     else toast.error("Could not find source request");
                   }}>
@@ -677,7 +677,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user }:
             <TableBody>
               {tableRequests.slice(0, 5).map((req) => (
                 <TableRow key={req._id}>
-                  <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(req._id)}>{req.wrId}</TableCell>
+                  <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(String(req._id))}>{req.wrId}</TableCell>
                   <TableCell>
                     {req.imageUrl ? (
                       <div className="w-8 h-8 rounded border overflow-hidden">
@@ -1168,7 +1168,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
             <TableBody>
               {sortedRequests.map((req) => (
                 <TableRow key={req._id} className="hover:bg-gray-50/50">
-                  <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(req._id)}>{req.wrId}</TableCell>
+                  <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(String(req._id))}>{req.wrId}</TableCell>
                   <TableCell>
                     {req.imageUrl ? (
                       <div className="w-10 h-10 rounded border overflow-hidden">
@@ -1207,7 +1207,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8" onClick={() => onSelectRequest(req._id)} title="View Details">
+                      <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8" onClick={() => onSelectRequest(String(req._id))} title="View Details">
                         <Eye size={16} />
                       </Button>
                       {isAdminLike(user) && (
@@ -1951,7 +1951,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                 <TableBody>
                   {unassignedRequests.map(wr => (
                     <TableRow key={wr._id} className="hover:bg-gray-50/50">
-                      <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(wr._id)}>{wr.wrId}</TableCell>
+                      <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(String(wr._id))}>{wr.wrId}</TableCell>
                       <TableCell>{wr.category}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={getPriorityColor(wr.priority)}>{wr.priority}</Badge>
@@ -1959,7 +1959,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                       <TableCell>{wr.department}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 h-8 w-8" onClick={() => onSelectRequest(wr._id)} title="View Details">
+                          <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 h-8 w-8" onClick={() => onSelectRequest(String(wr._id))} title="View Details">
                             <Eye size={16} />
                           </Button>
                           {isAdminLike(user) && (
