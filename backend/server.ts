@@ -44,6 +44,9 @@ async function startServer() {
   let isDbConnected = false;
 
   if (MONGODB_URI) {
+    const maskedUri = MONGODB_URI.replace(/\/\/.*@/, '//****:****@');
+    console.log(`📡 Attempting to connect to MongoDB: ${maskedUri}`);
+    
     mongoose.connect(MONGODB_URI)
       .then(() => {
         console.log('✅ Connected to MongoDB');
@@ -52,20 +55,35 @@ async function startServer() {
       })
       .catch(err => {
         console.error('❌ MongoDB connection error:', err.message);
+        if (err.message.includes('ECONNREFUSED') && (MONGODB_URI.includes('127.0.0.1') || MONGODB_URI.includes('localhost'))) {
+          console.warn('💡 Tip: Your MONGODB_URI is pointing to localhost, but MongoDB might not be running locally in this environment.');
+          console.warn('   If you are using AI Studio Build, please provide a remote MongoDB URI (like MongoDB Atlas) in the Secrets panel.');
+        }
         console.log('Running in limited mode without database persistence.');
       });
   } else {
     console.warn('⚠️ MONGODB_URI not found in environment variables.');
+    console.warn('💡 Tip: To enable persistence, please set the MONGODB_URI environment variable in your project settings/secrets.');
+    console.warn('   Example: mongodb+srv://<user>:<password>@cluster.mongodb.net/dbname');
   }
 
   app.use(express.json({ limit: '50mb' }));
 
   // Middleware to check DB connection for API routes
   app.use('/api', (req, res, next) => {
-    if (!isDbConnected && req.method !== 'GET') {
+    if (!isDbConnected) {
+      if (req.method === 'GET') {
+        // For GET requests, we can try to proceed but warn, 
+        // or return 503 if we want to be strict.
+        // Let's be strict to avoid UI hanging while Mongoose buffers.
+        return res.status(503).json({ 
+          error: 'Database connection unavailable',
+          details: 'The server is running but cannot connect to MongoDB. Please check your MONGODB_URI secret.'
+        });
+      }
       return res.status(503).json({ 
         error: 'Database connection unavailable',
-        details: 'Please ensure MongoDB is running and MONGODB_URI is configured.'
+        details: 'Write operations are disabled without a database connection. Please configure MONGODB_URI.'
       });
     }
     next();
@@ -82,7 +100,7 @@ async function startServer() {
       if (userCount === 0) {
         console.log('🌱 Seeding initial data...');
         
-        const hashedPassword = await bcrypt.hash('password123', 10);
+        const hashedPassword = await bcrypt.hash('qwerty', 10);
 
         const admin = await User.create({
           name: 'Supervisor Mark',
@@ -125,6 +143,8 @@ async function startServer() {
             room: 'Room 305',
             location: 'Block A, 3rd Floor, Room 305',
             category: 'Medical Equipment',
+            pic: 'Nurse Jane',
+            contactNumber: '+60123456789',
             priority: 'CRITICAL',
             status: 'IN PROGRESS',
             description: 'Defibrillator not charging'
@@ -139,6 +159,8 @@ async function startServer() {
             room: 'ER-2',
             location: 'Block B, 1st Floor, ER-2',
             category: 'HVAC',
+            pic: 'Maintenance Team',
+            contactNumber: '+60198765432',
             priority: 'HIGH',
             status: 'ASSIGNED',
             description: 'AC leaking water'

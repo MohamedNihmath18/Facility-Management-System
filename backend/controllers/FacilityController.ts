@@ -194,8 +194,18 @@ export const createWorkRequest = async (req: Request, res: Response) => {
       }]
     });
     res.status(201).json(newRequest);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create work request' });
+  } catch (err: any) {
+    console.error(`❌ Create work request error:`, err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: 'Validation Error', details: err.message });
+    }
+    if (err.message && err.message.includes('maximum document size')) {
+      return res.status(413).json({ 
+        error: 'Payload too large', 
+        details: 'The combined size of attachments exceeds the MongoDB limit (16MB). Please use smaller files.' 
+      });
+    }
+    res.status(500).json({ error: 'Failed to create work request', details: err.message });
   }
 };
 
@@ -268,8 +278,15 @@ export const updateWorkRequest = async (req: Request, res: Response) => {
     }
 
     res.json(updatedRequest);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update work request' });
+  } catch (err: any) {
+    console.error(`❌ Update work request error:`, err);
+    if (err.message && err.message.includes('maximum document size')) {
+      return res.status(413).json({ 
+        error: 'Payload too large', 
+        details: 'The total size of attachments in this request exceeds the database limit. Please use smaller files.' 
+      });
+    }
+    res.status(500).json({ error: 'Failed to update work request', details: err.message });
   }
 };
 

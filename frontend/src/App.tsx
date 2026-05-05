@@ -824,8 +824,8 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
   const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 20 * 1024 * 1024) { // 20MB limit
-        alert('Video size exceeds 20MB limit. Please choose a smaller file.');
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit for MongoDB document safety
+        alert('Video size exceeds 10MB limit. Base64 encoding for larger videos is not supported by the database limit.');
         e.target.value = '';
         return;
       }
@@ -869,9 +869,13 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
           imageUrl: '',
           videoUrl: ''
         });
+      } else {
+        const errorData = await res.json();
+        alert(`Error: ${errorData.details || errorData.error || 'Failed to create request'}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to create request:', err);
+      alert('Network error or server is unreachable. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1308,9 +1312,13 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
         setUpdateImage(null);
         setUpdateVideo(null);
         onRefresh();
+      } else {
+        const errorData = await res.json();
+        alert(`Error: ${errorData.details || errorData.error || 'Failed to post update'}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to add activity:', err);
+      alert('Failed to post update. Please try again.');
     } finally {
       setIsPosting(false);
     }
@@ -1526,8 +1534,8 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              if (file.size > 20 * 1024 * 1024) {
-                                alert('Video exceeds 20MB limit');
+                              if (file.size > 10 * 1024 * 1024) {
+                                alert('Video exceeds 10MB limit (Database constraint)');
                                 return;
                               }
                               const reader = new FileReader();
