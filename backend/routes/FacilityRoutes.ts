@@ -15,7 +15,8 @@ import {
   getAllCategories,
   createCategory,
   deleteCategory,
-  deleteWorkRequest
+  deleteWorkRequest,
+  getWorkRequestById
 } from '../controllers/FacilityController.ts';
 
 const router = express.Router();
@@ -34,6 +35,7 @@ router.delete('/users/:id', deleteUser);
 
 // Work Requests
 router.get('/work-requests', getAllWorkRequests);
+router.get('/work-requests/:id', getWorkRequestById);
 router.post('/work-requests', createWorkRequest);
 router.patch('/work-requests/:id', updateWorkRequest);
 router.delete('/work-requests/:id', deleteWorkRequest);

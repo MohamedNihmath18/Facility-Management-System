@@ -1227,7 +1227,8 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
   );
 };
 
-const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: WorkRequest | undefined, onBack: () => void, onRefresh: () => void, user: User | null }) => {
+const WorkRequestDetailView = ({ request: initialRequest, onBack, onRefresh, user }: { request: WorkRequest | undefined, onBack: () => void, onRefresh: () => void, user: User | null }) => {
+  const [request, setRequest] = useState<WorkRequest | undefined>(initialRequest);
   const [technicians, setTechnicians] = useState<User[]>([]);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedTech, setSelectedTech] = useState<string>('');
@@ -1235,6 +1236,23 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
   const [updateImage, setUpdateImage] = useState<string | null>(null);
   const [updateVideo, setUpdateVideo] = useState<string | null>(null);
   const [isPosting, setIsPosting] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  const fetchFullDetails = async () => {
+    if (!initialRequest) return;
+    try {
+      setLoadingDetails(true);
+      const res = await fetch(`${API_BASE_URL}/api/work-requests/${initialRequest._id}`);
+      const data = await res.json();
+      if (data && !data.error) {
+        setRequest(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch full request details:', err);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
 
   useEffect(() => {
     const fetchTechs = async () => {
@@ -1251,7 +1269,31 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
     fetchTechs();
   }, []);
 
-  if (!request) return <div className="p-8">Request not found</div>;
+  useEffect(() => {
+    if (initialRequest) {
+      // If activities or extra details are missing (optimized list), fetch them
+      if (!initialRequest.activities || initialRequest.activities.length === 0) {
+        fetchFullDetails();
+      } else {
+        setRequest(initialRequest);
+      }
+    }
+  }, [initialRequest]);
+
+  if (loadingDetails) return (
+    <div className="p-10 flex flex-col items-center justify-center space-y-4">
+      <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <p className="text-sm text-muted-foreground font-medium">Loading ticket details...</p>
+    </div>
+  );
+
+  if (!request) return (
+    <div className="p-8 text-center flex flex-col items-center gap-4">
+      <AlertCircle size={40} className="text-gray-400" />
+      <p className="text-muted-foreground">Request not found.</p>
+      <Button onClick={onBack}>Go Back</Button>
+    </div>
+  );
 
   const handleStatusUpdate = async (status: string, note: string) => {
     try {
@@ -3020,6 +3062,7 @@ export default function App() {
 
   const fetchData = async () => {
     try {
+      setLoading(true);
       const [statsRes, requestsRes, ordersRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/stats`),
         fetch(`${API_BASE_URL}/api/work-requests`),
@@ -3029,6 +3072,8 @@ export default function App() {
       const requestsData = await requestsRes.json();
       const ordersData = await ordersRes.json();
       
+      console.log('📋 Requests data received:', Array.isArray(requestsData) ? requestsData.length : 'Error');
+
       if (statsData && !statsData.error) {
         setStats(statsData);
       } else if (statsData.error) {
@@ -3040,7 +3085,7 @@ export default function App() {
       } else {
         console.error('Requests Data is not an array:', requestsData);
         setRequests([]);
-        if (requestsData.error) toast.error(`Failed to load requests: ${requestsData.error}`);
+        if (requestsData.error) toast.error(`Failed to load requests: ${requestsData.details || requestsData.error}`);
       }
 
       if (Array.isArray(ordersData)) {
@@ -3048,10 +3093,11 @@ export default function App() {
       } else {
         console.error('Orders Data is not an array:', ordersData);
         setOrders([]);
-        if (ordersData.error) toast.error(`Failed to load orders: ${ordersData.error}`);
+        if (ordersData.error) toast.error(`Failed to load orders: ${ordersData.details || ordersData.error}`);
       }
     } catch (err) {
       console.error('Failed to fetch data:', err);
+      toast.error('Connection error with the server');
       setRequests([]);
       setOrders([]);
     } finally {

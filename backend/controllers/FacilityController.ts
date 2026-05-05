@@ -35,7 +35,7 @@ export const login = async (req: Request, res: Response) => {
 // --- User Controller ---
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    const users = await User.find().select('-password').sort({ createdAt: -1 }).lean();
     res.json(users);
   } catch (err: any) {
     console.error(`❌ Failed to fetch users: ${err.message}`);
@@ -174,7 +174,11 @@ export const getStats = async (req: Request, res: Response) => {
 export const getAllWorkRequests = async (req: Request, res: Response) => {
   try {
     console.log('🔍 Fetching all work requests...');
-    const requests = await WorkRequest.find().sort({ createdAt: -1 });
+    // Exclude large fields from list view to prevent 500 errors and speed up loading
+    const requests = await WorkRequest.find()
+      .select('-videoUrl -activities')
+      .sort({ createdAt: -1 })
+      .lean();
     console.log(`✅ Found ${requests.length} work requests`);
     res.json(requests);
   } catch (err: any) {
@@ -183,20 +187,44 @@ export const getAllWorkRequests = async (req: Request, res: Response) => {
   }
 };
 
+export const getWorkRequestById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const request = await WorkRequest.findById(id).lean();
+    if (!request) return res.status(404).json({ error: 'Work Request not found' });
+    res.json(request);
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch work request ${req.params.id}: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch work request' });
+  }
+};
+
 export const createWorkRequest = async (req: Request, res: Response) => {
   try {
-    // Find the highest wrId to avoid duplicates
-    const lastRequest = await WorkRequest.findOne().sort({ wrId: -1 });
+    // Find the latest request to get the next number
+    const lastRequest = await WorkRequest.findOne().sort({ createdAt: -1 }).lean();
     let nextNum = 1;
     
     if (lastRequest && lastRequest.wrId) {
-      const match = lastRequest.wrId.match(/WR-\d+-(\d+)/);
-      if (match) {
-        nextNum = parseInt(match[1]) + 1;
+      const parts = lastRequest.wrId.split('-');
+      const lastNumStr = parts[parts.length - 1];
+      const lastNum = parseInt(lastNumStr);
+      if (!isNaN(lastNum)) {
+        nextNum = lastNum + 1;
       }
     }
     
-    const wrId = `WR-2026-${nextNum.toString().padStart(3, '0')}`;
+    // Safety check for unique wrId
+    let wrId = `WR-2026-${nextNum.toString().padStart(3, '0')}`;
+    let exists = await WorkRequest.findOne({ wrId });
+    let safetyCounter = 0;
+    while (exists && safetyCounter < 10) {
+      nextNum++;
+      wrId = `WR-2026-${nextNum.toString().padStart(3, '0')}`;
+      exists = await WorkRequest.findOne({ wrId });
+      safetyCounter++;
+    }
+
     const newRequest = await WorkRequest.create({ 
       ...req.body, 
       wrId,
@@ -310,7 +338,7 @@ export const updateWorkRequest = async (req: Request, res: Response) => {
 // --- Work Order Controller ---
 export const getAllWorkOrders = async (req: Request, res: Response) => {
   try {
-    const orders = await WorkOrder.find().sort({ createdAt: -1 });
+    const orders = await WorkOrder.find().sort({ createdAt: -1 }).lean();
     res.json(orders);
   } catch (err: any) {
     console.error(`❌ Failed to fetch work orders: ${err.message}`);
@@ -478,7 +506,7 @@ export const updateWorkOrder = async (req: Request, res: Response) => {
 // --- Category Controller ---
 export const getAllCategories = async (req: Request, res: Response) => {
   try {
-    const categories = await Category.find().sort({ name: 1 });
+    const categories = await Category.find().sort({ name: 1 }).lean();
     res.json(categories);
   } catch (err: any) {
     console.error(`❌ Failed to fetch categories: ${err.message}`);
