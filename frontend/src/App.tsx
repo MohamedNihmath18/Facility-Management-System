@@ -596,7 +596,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user }:
             <CardHeader>
               <CardTitle className="text-base font-semibold">Tickets by Category</CardTitle>
             </CardHeader>
-            <CardContent className="h-[300px]">
+            <CardContent className="min-h-[300px] h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={categoryData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -616,7 +616,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user }:
             <CardHeader>
               <CardTitle className="text-base font-semibold">SLA Compliance</CardTitle>
             </CardHeader>
-            <CardContent className="h-[300px] flex flex-col items-center justify-center">
+            <CardContent className="min-h-[300px] h-[300px] flex flex-col items-center justify-center">
               <ResponsiveContainer width="100%" height="80%">
                 <PieChart>
                   <Pie
@@ -2120,8 +2120,9 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
         <CardHeader>
           <CardTitle className="text-base font-semibold">Monthly Ticket Trend</CardTitle>
         </CardHeader>
-        <CardContent className="h-[350px]">
-          <ResponsiveContainer width="100%" height="100%">
+        <CardContent className="min-h-[400px] h-auto">
+          <div className="h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} />
@@ -2132,6 +2133,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
               <Line type="monotone" dataKey="open" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
+          </div>
           <div className="flex justify-center gap-6 mt-4">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-blue-500"></div>
@@ -2154,7 +2156,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
           <CardHeader>
             <CardTitle className="text-base font-semibold">Tickets by Category</CardTitle>
           </CardHeader>
-          <CardContent className="h-[300px]">
+          <CardContent className="min-h-[300px] h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -2180,8 +2182,9 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
           <CardHeader>
             <CardTitle className="text-base font-semibold">SLA Compliance Rate</CardTitle>
           </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="min-h-[400px] h-auto">
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
               <BarChart data={[{ name: 'On Time', value: stats.closed }, { name: 'Delayed', value: stats.total - stats.closed }]}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} />
@@ -2194,6 +2197,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            </div>
             <div className="text-center mt-4">
               <p className="text-2xl font-bold text-green-600">{stats.slaCompliance}%</p>
               <p className="text-xs text-muted-foreground font-medium">Overall SLA Compliance</p>

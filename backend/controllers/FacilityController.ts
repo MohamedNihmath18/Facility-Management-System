@@ -181,8 +181,18 @@ export const getAllWorkRequests = async (req: Request, res: Response) => {
 
 export const createWorkRequest = async (req: Request, res: Response) => {
   try {
-    const count = await WorkRequest.countDocuments();
-    const wrId = `WR-2026-${(count + 1).toString().padStart(3, '0')}`;
+    // Find the highest wrId to avoid duplicates
+    const lastRequest = await WorkRequest.findOne().sort({ wrId: -1 });
+    let nextNum = 1;
+    
+    if (lastRequest && lastRequest.wrId) {
+      const match = lastRequest.wrId.match(/WR-\d+-(\d+)/);
+      if (match) {
+        nextNum = parseInt(match[1]) + 1;
+      }
+    }
+    
+    const wrId = `WR-2026-${nextNum.toString().padStart(3, '0')}`;
     const newRequest = await WorkRequest.create({ 
       ...req.body, 
       wrId,
@@ -196,6 +206,9 @@ export const createWorkRequest = async (req: Request, res: Response) => {
     res.status(201).json(newRequest);
   } catch (err: any) {
     console.error(`❌ Create work request error:`, err);
+    if (err.code === 11000) {
+      return res.status(409).json({ error: 'Conflict Error', details: 'A request with this ID already exists. Please try again.' });
+    }
     if (err.name === 'ValidationError') {
       return res.status(400).json({ error: 'Validation Error', details: err.message });
     }
@@ -341,8 +354,17 @@ export const createWorkOrder = async (req: Request, res: Response) => {
       return res.status(200).json(updatedOrder);
     }
 
-    const count = await WorkOrder.countDocuments();
-    const woId = `WO-2026-${(count + 1).toString().padStart(3, '0')}`;
+    const lastOrder = await WorkOrder.findOne().sort({ woId: -1 });
+    let nextNum = 1;
+    
+    if (lastOrder && lastOrder.woId) {
+      const match = lastOrder.woId.match(/WO-\d+-(\d+)/);
+      if (match) {
+        nextNum = parseInt(match[1]) + 1;
+      }
+    }
+
+    const woId = `WO-2026-${nextNum.toString().padStart(3, '0')}`;
     const newOrder = await WorkOrder.create({ ...req.body, woId });
     
     // Update linked Work Request status and log activity
