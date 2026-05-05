@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { User, WorkRequest, WorkOrder } from '../models/FacilityModels.ts';
+import { User, WorkRequest, WorkOrder, Category } from '../models/FacilityModels.ts';
 
 // --- Auth Controller ---
 export const login = async (req: Request, res: Response) => {
@@ -428,5 +428,53 @@ export const updateWorkOrder = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error(`❌ Failed to update work order: ${err.message}`);
     res.status(500).json({ error: 'Failed to update work order' });
+  }
+};
+
+// --- Category Controller ---
+export const getAllCategories = async (req: Request, res: Response) => {
+  try {
+    const categories = await Category.find().sort({ name: 1 });
+    res.json(categories);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+};
+
+export const createCategory = async (req: Request, res: Response) => {
+  try {
+    const newCategory = await Category.create(req.body);
+    res.status(201).json(newCategory);
+  } catch (err: any) {
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Category already exists' });
+    }
+    res.status(500).json({ error: 'Failed to create category' });
+  }
+};
+
+export const deleteCategory = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await Category.findByIdAndDelete(id);
+    res.json({ message: 'Category deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete category' });
+  }
+};
+
+// --- Additional Work Request Controllers ---
+export const deleteWorkRequest = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await WorkRequest.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ error: 'Work Request not found' });
+    
+    // Also delete associated work order if exists
+    await WorkOrder.deleteOne({ wrId: deleted.wrId });
+    
+    res.json({ message: 'Work Request deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete work request' });
   }
 };

@@ -19,7 +19,9 @@ const WorkRequestSchema = new mongoose.Schema({
   block: String,
   floor: String,
   room: String,
-  location: String, // Keeping this for backward compatibility or as a combined field
+  location: String,
+  pic: { type: String, required: true },
+  contactNumber: { type: String, required: true },
   category: { type: String, required: true },
   priority: { type: String, enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], default: 'MEDIUM' },
   status: { 
@@ -40,6 +42,12 @@ const WorkRequestSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+const CategorySchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  description: String,
+  createdAt: { type: Date, default: Date.now }
+});
+
 const WorkOrderSchema = new mongoose.Schema({
   woId: { type: String, required: true, unique: true },
   wrId: { type: String, ref: 'WorkRequest', required: true },
@@ -56,3 +64,4 @@ const WorkOrderSchema = new mongoose.Schema({
 export const User = mongoose.model('User', UserSchema);
 export const WorkRequest = mongoose.model('WorkRequest', WorkRequestSchema);
 export const WorkOrder = mongoose.model('WorkOrder', WorkOrderSchema);
+export const Category = mongoose.model('Category', CategorySchema);

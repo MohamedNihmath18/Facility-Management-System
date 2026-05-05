@@ -11,7 +11,11 @@ import {
   getAllWorkOrders,
   createWorkOrder,
   updateWorkOrder,
-  login
+  login,
+  getAllCategories,
+  createCategory,
+  deleteCategory,
+  deleteWorkRequest
 } from '../controllers/FacilityController.ts';
 
 const router = express.Router();
@@ -32,10 +36,16 @@ router.delete('/users/:id', deleteUser);
 router.get('/work-requests', getAllWorkRequests);
 router.post('/work-requests', createWorkRequest);
 router.patch('/work-requests/:id', updateWorkRequest);
+router.delete('/work-requests/:id', deleteWorkRequest);
 
 // Work Orders
 router.get('/work-orders', getAllWorkOrders);
 router.post('/work-orders', createWorkOrder);
 router.patch('/work-orders/:id', updateWorkOrder);
+
+// Categories
+router.get('/categories', getAllCategories);
+router.post('/categories', createCategory);
+router.delete('/categories/:id', deleteCategory);
 
 export default router;

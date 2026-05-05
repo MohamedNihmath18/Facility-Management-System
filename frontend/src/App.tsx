@@ -81,7 +81,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import API_BASE_URL from './config';
 
 // --- Types ---
-type View = 'dashboard' | 'work-requests' | 'work-orders' | 'reports' | 'settings' | 'work-request-detail' | 'user-management';
+type View = 'dashboard' | 'work-requests' | 'work-orders' | 'reports' | 'settings' | 'work-request-detail' | 'user-management' | 'category-management';
 
 interface User {
   _id: string;
@@ -117,6 +117,8 @@ interface WorkRequest {
   floor?: string;
   room?: string;
   location: string;
+  pic: string;
+  contactNumber: string;
   category: string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   status: string;
@@ -130,6 +132,12 @@ interface WorkRequest {
     imageUrl?: string;
   }[];
   createdAt: string;
+}
+
+interface Category {
+  _id: string;
+  name: string;
+  description?: string;
 }
 
 interface WorkOrder {
@@ -219,7 +227,8 @@ const Sidebar = ({ currentView, setView, user, onSignOut, isOpen, onClose }: { c
     { id: 'work-orders', label: 'Work Orders', icon: Wrench, roles: ['admin', 'manager', 'supervisor', 'technician'] },
     { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'manager'] },
     { id: 'user-management', label: 'User Management', icon: UserPlus, roles: ['admin', 'manager'] },
-    { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin', 'manager', 'supervisor'] },
+    { id: 'category-management', label: 'Categories', icon: ClipboardCheck, roles: ['admin', 'manager'] },
+    { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin', 'manager', 'supervisor', 'technician', 'staff'] },
   ];
 
   const filteredItems = menuItems.filter(item => !user || item.roles.includes(user.role));
@@ -713,17 +722,35 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [priorityFilter, setPriorityFilter] = useState('ALL');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'createdAt', direction: 'desc' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [newRequest, setNewRequest] = useState({
     userName: user?.name || '',
     department: user?.department || '',
     block: '',
     floor: '',
     room: '',
+    pic: '',
+    contactNumber: '',
     category: '',
     priority: 'MEDIUM',
     description: '',
     imageUrl: ''
   });
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/categories`);
+      const data = await res.json();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch categories:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -792,6 +819,9 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/work-requests`, {
         method: 'POST',
@@ -811,6 +841,8 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
           block: '', 
           floor: '', 
           room: '', 
+          pic: '',
+          contactNumber: '',
           category: '', 
           priority: 'MEDIUM', 
           description: '', 
@@ -819,6 +851,22 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
       }
     } catch (err) {
       console.error('Failed to create request:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this work request? This will also delete any linked work orders.')) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/work-requests/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        onRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to delete request:', err);
     }
   };
 
@@ -896,17 +944,40 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label htmlFor="pic">PIC Name</Label>
+                  <Input 
+                    id="pic"
+                    placeholder="Person in charge" 
+                    value={newRequest.pic}
+                    onChange={(e) => setNewRequest({...newRequest, pic: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="contactNumber">Contact Number</Label>
+                  <Input 
+                    id="contactNumber"
+                    placeholder="Phone number" 
+                    value={newRequest.contactNumber}
+                    onChange={(e) => setNewRequest({...newRequest, contactNumber: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label>Category</Label>
                   <Select onValueChange={(v) => setNewRequest({...newRequest, category: v})} required>
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Medical Equipment">Medical Equipment</SelectItem>
-                      <SelectItem value="HVAC">HVAC</SelectItem>
-                      <SelectItem value="Electrical">Electrical</SelectItem>
-                      <SelectItem value="Plumbing">Plumbing</SelectItem>
-                      <SelectItem value="Cleaning">Cleaning</SelectItem>
+                      {categories.length > 0 ? categories.map(cat => (
+                        <SelectItem key={cat._id} value={cat.name}>{cat.name}</SelectItem>
+                      )) : (
+                        <SelectItem value="Other" disabled>No categories available</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -964,8 +1035,10 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
               </div>
 
               <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Submit Request</Button>
+                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSubmitting}>Cancel</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={isSubmitting}>
+                  {isSubmitting ? 'Submitting...' : 'Submit Request'}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -1030,6 +1103,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                 <TableHead><SortButton label="Priority" sortKey="priority" currentSort={sortConfig} onSort={handleSort} /></TableHead>
                 <TableHead><SortButton label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} /></TableHead>
                 <TableHead><SortButton label="Created Date" sortKey="createdAt" currentSort={sortConfig} onSort={handleSort} /></TableHead>
+                {isAdminLike(user) && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1068,6 +1142,13 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </TableCell>
+                  {isAdminLike(user) && (
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8" onClick={(e) => handleDelete(e, req._id)}>
+                        <XCircle size={16} />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -1279,6 +1360,24 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                   }>
                     {request.status}
                   </Badge>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-gray-50 rounded text-gray-500">
+                  <UserPlus size={18} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">PIC</p>
+                  <p className="text-sm font-medium">{request.pic || 'N/A'}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-gray-50 rounded text-gray-500">
+                  <Send size={18} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Contact Number</p>
+                  <p className="text-sm font-medium">{request.contactNumber || 'N/A'}</p>
                 </div>
               </div>
             </CardContent>
@@ -1851,6 +1950,8 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
         'Raised By': req.userName,
         'Department': req.department,
         'Location': `${req.block || ''} ${req.floor || ''} ${req.room || ''}`.trim(),
+        'PIC': req.pic || 'N/A',
+        'Contact Number': req.contactNumber || 'N/A',
         'Category': req.category,
         'Priority': req.priority,
         'Status': req.status,
@@ -2396,6 +2497,152 @@ const UserManagementView = () => {
   );
 };
 
+const CategoryManagementView = ({ user, onRefresh }: { user: User | null, onRefresh: () => void }) => {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState({ name: '', description: '' });
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/categories`);
+      const data = await res.json();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch categories:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCategory)
+      });
+      if (res.ok) {
+        setNewCategory({ name: '', description: '' });
+        setIsModalOpen(false);
+        fetchCategories();
+        onRefresh();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to create category');
+      }
+    } catch (err) {
+      console.error('Failed to create category:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this category?')) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/categories/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchCategories();
+        onRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to delete category:', err);
+    }
+  };
+
+  if (user?.role !== 'admin' && user?.role !== 'manager') {
+    return <div className="p-8">Access Denied</div>;
+  }
+
+  return (
+    <div className="p-4 lg:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-xl lg:text-2xl font-bold">Category Management</h2>
+          <p className="text-sm text-muted-foreground">Manage work request categories for the system</p>
+        </div>
+        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-blue-600 hover:bg-blue-700">
+              <Plus size={18} className="mr-2" /> Add New Category
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Category</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="catName">Category Name</Label>
+                <Input 
+                  id="catName" 
+                  value={newCategory.name} 
+                  onChange={(e) => setNewCategory({...newCategory, name: e.target.value})} 
+                  placeholder="e.g., HVAC, Biomedical"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="catDesc">Description</Label>
+                <textarea 
+                  id="catDesc"
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={newCategory.description} 
+                  onChange={(e) => setNewCategory({...newCategory, description: e.target.value})} 
+                  placeholder="What is this category for?"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+                <Button type="submit" className="bg-blue-600" disabled={isLoading}>
+                  {isLoading ? 'Creating...' : 'Create Category'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Category Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {categories.map((cat) => (
+                <TableRow key={cat._id}>
+                  <TableCell className="font-medium">{cat.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{cat.description || 'No description'}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(cat._id)}>
+                      <XCircle size={18} />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {categories.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">No categories found</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 const SettingsView = ({ user }: { user: User | null }) => {
   return (
     <div className="p-4 lg:p-8 max-w-2xl space-y-8">
@@ -2660,6 +2907,8 @@ export default function App() {
         return <ReportsView stats={stats} requests={requests} orders={orders} user={user} />;
       case 'user-management':
         return <UserManagementView />;
+      case 'category-management':
+        return <CategoryManagementView user={user} onRefresh={fetchData} />;
       case 'settings':
         return <SettingsView user={user} />;
       default:
