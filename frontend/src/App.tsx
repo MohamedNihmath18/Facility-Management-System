@@ -31,8 +31,11 @@ import {
   RotateCcw,
   Menu,
   X,
-  Video
+  Video,
+  Download,
+  Eye
 } from 'lucide-react';
+import { Toaster, toast } from 'sonner';
 import { 
   BarChart, 
   Bar, 
@@ -825,7 +828,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 10 * 1024 * 1024) { // 10MB limit for MongoDB document safety
-        alert('Video size exceeds 10MB limit. Base64 encoding for larger videos is not supported by the database limit.');
+        toast.error('Video size exceeds 10MB limit. Base64 encoding for larger videos is not supported by the database limit.');
         e.target.value = '';
         return;
       }
@@ -855,6 +858,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
       if (res.ok) {
         setIsModalOpen(false);
         onRefresh();
+        toast.success('Work request created successfully');
         setNewRequest({ 
           userName: user?.name || '', 
           department: user?.department || '', 
@@ -871,11 +875,11 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
         });
       } else {
         const errorData = await res.json();
-        alert(`Error: ${errorData.details || errorData.error || 'Failed to create request'}`);
+        toast.error(`Error: ${errorData.details || errorData.error || 'Failed to create request'}`);
       }
     } catch (err: any) {
       console.error('Failed to create request:', err);
-      alert('Network error or server is unreachable. Please try again.');
+      toast.error('Network error or server is unreachable. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -889,9 +893,13 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
       const res = await fetch(`${API_BASE_URL}/api/work-requests/${id}`, { method: 'DELETE' });
       if (res.ok) {
         onRefresh();
+        toast.success('Work request deleted successfully');
+      } else {
+        toast.error('Failed to delete work request');
       }
     } catch (err) {
       console.error('Failed to delete request:', err);
+      toast.error('Error deleting work request');
     }
   };
 
@@ -1152,12 +1160,12 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                 <TableHead><SortButton label="Priority" sortKey="priority" currentSort={sortConfig} onSort={handleSort} /></TableHead>
                 <TableHead><SortButton label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} /></TableHead>
                 <TableHead><SortButton label="Created Date" sortKey="createdAt" currentSort={sortConfig} onSort={handleSort} /></TableHead>
-                {isAdminLike(user) && <TableHead className="text-right">Actions</TableHead>}
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedRequests.map((req) => (
-                <TableRow key={req._id}>
+                <TableRow key={req._id} className="hover:bg-gray-50/50">
                   <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(req._id)}>{req.wrId}</TableCell>
                   <TableCell>
                     {req.imageUrl ? (
@@ -1195,13 +1203,18 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </TableCell>
-                  {isAdminLike(user) && (
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8" onClick={(e) => handleDelete(e, req._id)}>
-                        <XCircle size={16} />
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8" onClick={() => onSelectRequest(req._id)} title="View Details">
+                        <Eye size={16} />
                       </Button>
-                    </TableCell>
-                  )}
+                      {isAdminLike(user) && (
+                        <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8" onClick={(e) => handleDelete(e, req._id)} title="Delete">
+                          <XCircle size={16} />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -1254,9 +1267,13 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
       });
       if (res.ok) {
         onRefresh();
+        toast.success(`Status updated to ${status}`);
+      } else {
+        toast.error('Failed to update status');
       }
     } catch (err) {
       console.error('Failed to update status:', err);
+      toast.error('Error updating status');
     }
   };
 
@@ -1280,9 +1297,13 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
       if (res.ok) {
         setIsAssignModalOpen(false);
         onRefresh();
+        toast.success(`Technician ${tech.name} assigned successfully`);
+      } else {
+        toast.error('Failed to assign technician');
       }
     } catch (err) {
       console.error('Failed to assign technician:', err);
+      toast.error('Error assigning technician');
     }
   };
 
@@ -1312,13 +1333,14 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
         setUpdateImage(null);
         setUpdateVideo(null);
         onRefresh();
+        toast.success('Activity update posted');
       } else {
         const errorData = await res.json();
-        alert(`Error: ${errorData.details || errorData.error || 'Failed to post update'}`);
+        toast.error(`Error: ${errorData.details || errorData.error || 'Failed to post update'}`);
       }
     } catch (err: any) {
       console.error('Failed to add activity:', err);
-      alert('Failed to post update. Please try again.');
+      toast.error('Failed to post update. Please try again.');
     } finally {
       setIsPosting(false);
     }
@@ -1468,12 +1490,21 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                   </div>
                 )}
                 {request.videoUrl && (
-                  <div className="rounded-lg border overflow-hidden bg-black aspect-video flex items-center justify-center">
+                  <div className="rounded-lg border overflow-hidden bg-black aspect-video relative group">
                     <video 
                       src={request.videoUrl} 
                       controls 
+                      playsInline
                       className="w-full h-full max-h-[500px]"
                     />
+                    <a 
+                      href={request.videoUrl} 
+                      download={`video-${request.wrId}.mp4`}
+                      className="absolute top-2 right-2 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 text-white"
+                      title="Download Video"
+                    >
+                      <Download size={18} />
+                    </a>
                   </div>
                 )}
               </CardContent>
@@ -1535,7 +1566,7 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                             const file = e.target.files?.[0];
                             if (file) {
                               if (file.size > 10 * 1024 * 1024) {
-                                alert('Video exceeds 10MB limit (Database constraint)');
+                                toast.error('Video exceeds 10MB limit (Database constraint)');
                                 return;
                               }
                               const reader = new FileReader();
@@ -1606,12 +1637,21 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                               </div>
                             )}
                             {activity.videoUrl && (
-                              <div className="rounded-lg border overflow-hidden bg-black aspect-video flex items-center justify-center">
+                              <div className="rounded-lg border overflow-hidden bg-black aspect-video relative group flex items-center justify-center">
                                 <video 
                                   src={activity.videoUrl} 
                                   controls 
+                                  playsInline
                                   className="w-full h-full max-h-[300px]" 
                                 />
+                                <a 
+                                  href={activity.videoUrl} 
+                                  download={`video-activity-${i}.mp4`}
+                                  className="absolute top-2 right-2 bg-white/20 hover:bg-white/40 p-1.5 rounded-full backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 text-white"
+                                  title="Download Video"
+                                >
+                                  <Download size={14} />
+                                </a>
                               </div>
                             )}
                           </div>
@@ -1802,9 +1842,13 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
       if (res.ok) {
         setIsAssignModalOpen(false);
         onRefresh();
+        toast.success(`Work order assigned to ${tech?.name}`);
+      } else {
+        toast.error('Failed to create work order');
       }
     } catch (err) {
       console.error('Failed to assign:', err);
+      toast.error('Error creating work order');
     }
   };
 
@@ -1821,9 +1865,13 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
       });
       if (res.ok) {
         onRefresh();
+        toast.success(`Work order status updated to ${status}`);
+      } else {
+        toast.error('Failed to update status');
       }
     } catch (err) {
       console.error('Failed to update status:', err);
+      toast.error('Error updating status');
     }
   };
 
@@ -1879,7 +1927,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
         <StatCard label="Completed" value={orders.filter(o => o.status === 'COMPLETED').length} icon={CheckCircle2} colorClass="bg-green-100 text-green-600" />
       </div>
 
-      {isAdminLike(user) && (
+      {(isAdminLike(user) || user?.role === 'technician') && (
         <>
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold">Unassigned Requests</h3>
@@ -1895,22 +1943,29 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                     <TableHead>Category</TableHead>
                     <TableHead>Priority</TableHead>
                     <TableHead>Department</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {unassignedRequests.map(wr => (
-                    <TableRow key={wr._id}>
-                      <TableCell className="font-medium">{wr.wrId}</TableCell>
+                    <TableRow key={wr._id} className="hover:bg-gray-50/50">
+                      <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(wr._id)}>{wr.wrId}</TableCell>
                       <TableCell>{wr.category}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{wr.priority}</Badge>
+                        <Badge variant="outline" className={getPriorityColor(wr.priority)}>{wr.priority}</Badge>
                       </TableCell>
                       <TableCell>{wr.department}</TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" onClick={() => { setSelectedWR(wr); setIsAssignModalOpen(true); }}>
-                          Assign Technician
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 h-8 w-8" onClick={() => onSelectRequest(wr._id)} title="View Details">
+                            <Eye size={16} />
+                          </Button>
+                          {isAdminLike(user) && (
+                            <Button size="sm" onClick={() => { setSelectedWR(wr); setIsAssignModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700">
+                              Assign
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -2012,16 +2067,21 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                         {wo.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      {wo.status === 'ASSIGNED' && (
-                        <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'IN PROGRESS')}>Start</Button>
-                      )}
-                      {wo.status === 'IN PROGRESS' && (
-                        <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'COMPLETED')}>Complete</Button>
-                      )}
-                      {wo.status === 'ON HOLD' && (
-                        <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'IN PROGRESS')}>Resume</Button>
-                      )}
+                    <TableCell className="text-right">
+                      <div className="flex justify-end items-center gap-2">
+                        <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 h-8 w-8" onClick={() => linkedRequest && onSelectRequest(linkedRequest._id)} title="View Linked Request">
+                          <Eye size={16} />
+                        </Button>
+                        {wo.status === 'ASSIGNED' && (
+                          <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'IN PROGRESS')}>Start</Button>
+                        )}
+                        {wo.status === 'IN PROGRESS' && (
+                          <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'COMPLETED')}>Complete</Button>
+                        )}
+                        {wo.status === 'ON HOLD' && (
+                          <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'IN PROGRESS')}>Resume</Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -2046,7 +2106,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
 
   const handleExport = () => {
     if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
-      alert('Only Admins and Managers can export reports.');
+      toast.error('Only Admins and Managers can export reports.');
       return;
     }
 
@@ -2651,9 +2711,10 @@ const CategoryManagementView = ({ user, onRefresh }: { user: User | null, onRefr
         setIsModalOpen(false);
         fetchCategories();
         onRefresh();
+        toast.success('Category created successfully');
       } else {
         const data = await res.json();
-        alert(data.error || 'Failed to create category');
+        toast.error(data.error || 'Failed to create category');
       }
     } catch (err) {
       console.error('Failed to create category:', err);
@@ -2669,9 +2730,13 @@ const CategoryManagementView = ({ user, onRefresh }: { user: User | null, onRefr
       if (res.ok) {
         fetchCategories();
         onRefresh();
+        toast.success('Category deleted successfully');
+      } else {
+        toast.error('Failed to delete category');
       }
     } catch (err) {
       console.error('Failed to delete category:', err);
+      toast.error('Error deleting category');
     }
   };
 
@@ -3038,6 +3103,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 overflow-x-hidden">
+      <Toaster position="top-right" richColors />
       <Sidebar 
         currentView={view} 
         setView={setView} 
