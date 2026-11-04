@@ -19,9 +19,7 @@ const WorkRequestSchema = new mongoose.Schema({
   block: String,
   floor: String,
   room: String,
-  location: String,
-  pic: { type: String, required: true },
-  contactNumber: { type: String, required: true },
+  location: String, // Keeping this for backward compatibility or as a combined field
   category: { type: String, required: true },
   priority: { type: String, enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], default: 'MEDIUM' },
   status: { 
@@ -31,23 +29,15 @@ const WorkRequestSchema = new mongoose.Schema({
   },
   description: String,
   imageUrl: String,
-  videoUrl: String,
   activities: [{
     action: String,
     user: String,
     timestamp: { type: Date, default: Date.now },
     note: String,
-    imageUrl: String,
-    videoUrl: String
+    imageUrl: String
   }],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
-});
-
-const CategorySchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true },
-  description: String,
-  createdAt: { type: Date, default: Date.now }
 });
 
 const WorkOrderSchema = new mongoose.Schema({
@@ -66,4 +56,63 @@ const WorkOrderSchema = new mongoose.Schema({
 export const User = mongoose.model('User', UserSchema);
 export const WorkRequest = mongoose.model('WorkRequest', WorkRequestSchema);
 export const WorkOrder = mongoose.model('WorkOrder', WorkOrderSchema);
-export const Category = mongoose.model('Category', CategorySchema);
+
+const AssetDocumentSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  name: { type: String, required: true },
+  type: { 
+    type: String, 
+    enum: ['PPM Report', 'Service Report', 'License / Certificate', 'Calibration Report', 'Invoice', 'User Manual', 'Safety Certificate', 'Other'],
+    default: 'Other' 
+  },
+  url: String, // Base64 data URI or file path
+  fileSize: String,
+  uploadDate: { type: Date, default: Date.now },
+  expiryDate: Date,
+  notes: String
+});
+
+const AssetSchema = new mongoose.Schema({
+  no: { type: Number },
+  assetName: { type: String, required: true },
+  assetNo: { type: String, required: true, unique: true, index: true },
+  serialNumber: { type: String },
+  model: { type: String },
+  manufacturerName: { type: String },
+  supplierName: { type: String },
+  supplierContactNo: { type: String },
+  location: { type: String, required: true },
+  department: { type: String },
+  warrantyPeriod: { type: String },
+  startOfWarranty: { type: Date },
+  endOfWarranty: { type: Date, index: true },
+  ppmFrequency: { type: String },
+  ppm1Planned: { type: Date },
+  ppm1Actual: { type: Date },
+  ppm2Planned: { type: Date },
+  ppm2Actual: { type: Date },
+  ppm3Planned: { type: Date },
+  ppm3Actual: { type: Date },
+  ppm4Planned: { type: Date },
+  ppm4Actual: { type: Date },
+  ppm5Planned: { type: Date },
+  ppm5Actual: { type: Date },
+  ppm6Planned: { type: Date },
+  ppm6Actual: { type: Date },
+  poNo: { type: String },
+  doNo: { type: String },
+  invoiceNo: { type: String },
+  totalAmount: { type: Number, default: 0 },
+  lifespan: { type: String },
+  assetCriticality: { type: String, enum: ['Critical', 'High', 'Medium', 'Low'], default: 'Medium' },
+  assetCategory: { type: String, default: 'Medical Equipment' },
+  typeOfEquipmentSafety: { type: String },
+  status: { type: String, enum: ['Active', 'Under Maintenance', 'In Repair', 'Decommissioned', 'Inactive'], default: 'Active' },
+  licenseEndDate: { type: Date, index: true },
+  documents: [AssetDocumentSchema],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+export const Asset = mongoose.model('Asset', AssetSchema);
+

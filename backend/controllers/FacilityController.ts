@@ -1,6 +1,6 @@
-import type { Request, Response } from 'express';
+import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { User, WorkRequest, WorkOrder, Category } from '../models/FacilityModels.ts';
+import { User, WorkRequest, WorkOrder, Asset } from '../models/FacilityModels.ts';
 
 // --- Auth Controller ---
 export const login = async (req: Request, res: Response) => {
@@ -35,11 +35,10 @@ export const login = async (req: Request, res: Response) => {
 // --- User Controller ---
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 }).lean();
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
     res.json(users);
-  } catch (err: any) {
-    console.error(`❌ Failed to fetch users: ${err.message}`);
-    res.status(500).json({ error: 'Failed to fetch users', details: err.message });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 };
 
@@ -77,20 +76,6 @@ export const updateUser = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error(`❌ Update user error: ${err.message}`);
     res.status(500).json({ error: 'Failed to update user' });
-  }
-};
-
-export const deleteUser = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const deletedUser = await User.findByIdAndDelete(id);
-    if (!deletedUser) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    res.json({ message: 'User deleted successfully' });
-  } catch (err: any) {
-    console.error(`❌ Delete user error: ${err.message}`);
-    res.status(500).json({ error: 'Failed to delete user' });
   }
 };
 
@@ -173,58 +158,17 @@ export const getStats = async (req: Request, res: Response) => {
 // --- Work Request Controller ---
 export const getAllWorkRequests = async (req: Request, res: Response) => {
   try {
-    console.log('🔍 Fetching all work requests...');
-    // Exclude large fields from list view to prevent 500 errors and speed up loading
-    const requests = await WorkRequest.find()
-      .select('-videoUrl -activities')
-      .sort({ createdAt: -1 })
-      .lean();
-    console.log(`✅ Found ${requests.length} work requests`);
+    const requests = await WorkRequest.find().sort({ createdAt: -1 });
     res.json(requests);
-  } catch (err: any) {
-    console.error(`❌ Failed to fetch work requests: ${err.message}`, err);
-    res.status(500).json({ error: 'Failed to fetch work requests', details: err.message });
-  }
-};
-
-export const getWorkRequestById = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const request = await WorkRequest.findById(id).lean();
-    if (!request) return res.status(404).json({ error: 'Work Request not found' });
-    res.json(request);
-  } catch (err: any) {
-    console.error(`❌ Failed to fetch work request ${req.params.id}: ${err.message}`);
-    res.status(500).json({ error: 'Failed to fetch work request' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch work requests' });
   }
 };
 
 export const createWorkRequest = async (req: Request, res: Response) => {
   try {
-    // Find the latest request to get the next number
-    const lastRequest = await WorkRequest.findOne().sort({ createdAt: -1 }).lean();
-    let nextNum = 1;
-    
-    if (lastRequest && lastRequest.wrId) {
-      const parts = lastRequest.wrId.split('-');
-      const lastNumStr = parts[parts.length - 1];
-      const lastNum = parseInt(lastNumStr);
-      if (!isNaN(lastNum)) {
-        nextNum = lastNum + 1;
-      }
-    }
-    
-    // Safety check for unique wrId
-    let wrId = `WR-2026-${nextNum.toString().padStart(3, '0')}`;
-    let exists = await WorkRequest.findOne({ wrId });
-    let safetyCounter = 0;
-    while (exists && safetyCounter < 10) {
-      nextNum++;
-      wrId = `WR-2026-${nextNum.toString().padStart(3, '0')}`;
-      exists = await WorkRequest.findOne({ wrId });
-      safetyCounter++;
-    }
-
+    const count = await WorkRequest.countDocuments();
+    const wrId = `WR-2026-${(count + 1).toString().padStart(3, '0')}`;
     const newRequest = await WorkRequest.create({ 
       ...req.body, 
       wrId,
@@ -236,21 +180,8 @@ export const createWorkRequest = async (req: Request, res: Response) => {
       }]
     });
     res.status(201).json(newRequest);
-  } catch (err: any) {
-    console.error(`❌ Create work request error:`, err);
-    if (err.code === 11000) {
-      return res.status(409).json({ error: 'Conflict Error', details: 'A request with this ID already exists. Please try again.' });
-    }
-    if (err.name === 'ValidationError') {
-      return res.status(400).json({ error: 'Validation Error', details: err.message });
-    }
-    if (err.message && err.message.includes('maximum document size')) {
-      return res.status(413).json({ 
-        error: 'Payload too large', 
-        details: 'The combined size of attachments exceeds the MongoDB limit (16MB). Please use smaller files.' 
-      });
-    }
-    res.status(500).json({ error: 'Failed to create work request', details: err.message });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create work request' });
   }
 };
 
@@ -323,26 +254,18 @@ export const updateWorkRequest = async (req: Request, res: Response) => {
     }
 
     res.json(updatedRequest);
-  } catch (err: any) {
-    console.error(`❌ Update work request error:`, err);
-    if (err.message && err.message.includes('maximum document size')) {
-      return res.status(413).json({ 
-        error: 'Payload too large', 
-        details: 'The total size of attachments in this request exceeds the database limit. Please use smaller files.' 
-      });
-    }
-    res.status(500).json({ error: 'Failed to update work request', details: err.message });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update work request' });
   }
 };
 
 // --- Work Order Controller ---
 export const getAllWorkOrders = async (req: Request, res: Response) => {
   try {
-    const orders = await WorkOrder.find().sort({ createdAt: -1 }).lean();
+    const orders = await WorkOrder.find().sort({ createdAt: -1 });
     res.json(orders);
-  } catch (err: any) {
-    console.error(`❌ Failed to fetch work orders: ${err.message}`);
-    res.status(500).json({ error: 'Failed to fetch work orders', details: err.message });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch work orders' });
   }
 };
 
@@ -387,17 +310,8 @@ export const createWorkOrder = async (req: Request, res: Response) => {
       return res.status(200).json(updatedOrder);
     }
 
-    const lastOrder = await WorkOrder.findOne().sort({ woId: -1 });
-    let nextNum = 1;
-    
-    if (lastOrder && lastOrder.woId) {
-      const match = lastOrder.woId.match(/WO-\d+-(\d+)/);
-      if (match) {
-        nextNum = parseInt(match[1]) + 1;
-      }
-    }
-
-    const woId = `WO-2026-${nextNum.toString().padStart(3, '0')}`;
+    const count = await WorkOrder.countDocuments();
+    const woId = `WO-2026-${(count + 1).toString().padStart(3, '0')}`;
     const newOrder = await WorkOrder.create({ ...req.body, woId });
     
     // Update linked Work Request status and log activity
@@ -503,51 +417,452 @@ export const updateWorkOrder = async (req: Request, res: Response) => {
   }
 };
 
-// --- Category Controller ---
-export const getAllCategories = async (req: Request, res: Response) => {
-  try {
-    const categories = await Category.find().sort({ name: 1 }).lean();
-    res.json(categories);
-  } catch (err: any) {
-    console.error(`❌ Failed to fetch categories: ${err.message}`);
-    res.status(500).json({ error: 'Failed to fetch categories', details: err.message });
-  }
-};
+// --- Asset Controller ---
 
-export const createCategory = async (req: Request, res: Response) => {
+export const getAssetStats = async (req: Request, res: Response) => {
   try {
-    const newCategory = await Category.create(req.body);
-    res.status(201).json(newCategory);
-  } catch (err: any) {
-    if (err.code === 11000) {
-      return res.status(400).json({ error: 'Category already exists' });
+    const { department } = req.query;
+    const baseFilter: any = {};
+    if (department) {
+      baseFilter.$or = [
+        { department: new RegExp(String(department), 'i') },
+        { location: new RegExp(String(department), 'i') }
+      ];
     }
-    res.status(500).json({ error: 'Failed to create category' });
+
+    const total = await Asset.countDocuments(baseFilter);
+    const active = await Asset.countDocuments({ ...baseFilter, status: 'Active' });
+    const underMaintenance = await Asset.countDocuments({ ...baseFilter, status: { $in: ['Under Maintenance', 'In Repair'] } });
+    
+    const now = new Date();
+    const oneMonthFromNow = new Date();
+    oneMonthFromNow.setDate(now.getDate() + 30);
+
+    // Warranty expiring in 30 days
+    const warrantyExpiringSoon = await Asset.countDocuments({
+      ...baseFilter,
+      endOfWarranty: { $lte: oneMonthFromNow }
+    });
+
+    // License expiring in 30 days
+    const licenseExpiringSoon = await Asset.countDocuments({
+      ...baseFilter,
+      $or: [
+        { licenseEndDate: { $lte: oneMonthFromNow } },
+        { "documents.expiryDate": { $lte: oneMonthFromNow } }
+      ]
+    });
+
+    // PPM due in 30 days
+    const ppmFilter = {
+      ...baseFilter,
+      $or: [
+        { ppm1Planned: { $lte: oneMonthFromNow }, ppm1Actual: null },
+        { ppm2Planned: { $lte: oneMonthFromNow }, ppm2Actual: null },
+        { ppm3Planned: { $lte: oneMonthFromNow }, ppm3Actual: null },
+        { ppm4Planned: { $lte: oneMonthFromNow }, ppm4Actual: null },
+        { ppm5Planned: { $lte: oneMonthFromNow }, ppm5Actual: null },
+        { ppm6Planned: { $lte: oneMonthFromNow }, ppm6Actual: null }
+      ]
+    };
+    const ppmDueSoon = await Asset.countDocuments(ppmFilter);
+
+    // Total valuation
+    const valuationResult = await Asset.aggregate([
+      { $match: baseFilter },
+      { $group: { _id: null, totalValue: { $sum: "$totalAmount" } } }
+    ]);
+    const totalValue = valuationResult.length > 0 ? valuationResult[0].totalValue : 0;
+
+    // Categories breakdown
+    const categories = await Asset.aggregate([
+      { $match: baseFilter },
+      { $group: { _id: "$assetCategory", count: { $sum: 1 } } },
+      { $project: { name: "$_id", value: "$count", _id: 0 } }
+    ]);
+
+    // Criticality breakdown
+    const criticality = await Asset.aggregate([
+      { $match: baseFilter },
+      { $group: { _id: "$assetCriticality", count: { $sum: 1 } } },
+      { $project: { name: "$_id", value: "$count", _id: 0 } }
+    ]);
+
+    res.json({
+      total,
+      active,
+      underMaintenance,
+      warrantyExpiringSoon,
+      licenseExpiringSoon,
+      ppmDueSoon,
+      totalValue,
+      categories,
+      criticality
+    });
+  } catch (err: any) {
+    console.error(`❌ Asset stats error: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch asset stats' });
   }
 };
 
-export const deleteCategory = async (req: Request, res: Response) => {
+export const getAllAssets = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    await Category.findByIdAndDelete(id);
-    res.json({ message: 'Category deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete category' });
+    const { 
+      department, 
+      search, 
+      category, 
+      criticality, 
+      status, 
+      alert,
+      page = '1', 
+      limit = '1000' 
+    } = req.query;
+
+    const filter: any = {};
+
+    if (department) {
+      filter.$or = [
+        { department: new RegExp(String(department), 'i') },
+        { location: new RegExp(String(department), 'i') }
+      ];
+    }
+
+    if (category && category !== 'All') {
+      filter.assetCategory = category;
+    }
+
+    if (criticality && criticality !== 'All') {
+      filter.assetCriticality = criticality;
+    }
+
+    if (status && status !== 'All') {
+      filter.status = status;
+    }
+
+    if (search) {
+      const searchRegex = new RegExp(String(search), 'i');
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { assetName: searchRegex },
+          { assetNo: searchRegex },
+          { serialNumber: searchRegex },
+          { model: searchRegex },
+          { manufacturerName: searchRegex },
+          { supplierName: searchRegex },
+          { location: searchRegex }
+        ]
+      });
+    }
+
+    const now = new Date();
+    const oneMonthFromNow = new Date();
+    oneMonthFromNow.setDate(now.getDate() + 30);
+
+    if (alert === 'warranty') {
+      filter.endOfWarranty = { $lte: oneMonthFromNow };
+    } else if (alert === 'license') {
+      filter.$or = [
+        { licenseEndDate: { $lte: oneMonthFromNow } },
+        { "documents.expiryDate": { $lte: oneMonthFromNow } }
+      ];
+    } else if (alert === 'ppm') {
+      filter.$or = [
+        { ppm1Planned: { $lte: oneMonthFromNow }, ppm1Actual: null },
+        { ppm2Planned: { $lte: oneMonthFromNow }, ppm2Actual: null },
+        { ppm3Planned: { $lte: oneMonthFromNow }, ppm3Actual: null },
+        { ppm4Planned: { $lte: oneMonthFromNow }, ppm4Actual: null },
+        { ppm5Planned: { $lte: oneMonthFromNow }, ppm5Actual: null },
+        { ppm6Planned: { $lte: oneMonthFromNow }, ppm6Actual: null }
+      ];
+    }
+
+    const pageNum = parseInt(String(page), 10) || 1;
+    const limitNum = parseInt(String(limit), 10) || 1000;
+    const skip = (pageNum - 1) * limitNum;
+
+    const total = await Asset.countDocuments(filter);
+    const assets = await Asset.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    res.json({
+      assets,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum)
+    });
+  } catch (err: any) {
+    console.error(`❌ Get assets error: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch assets' });
   }
 };
 
-// --- Additional Work Request Controllers ---
-export const deleteWorkRequest = async (req: Request, res: Response) => {
+export const getAssetById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const deleted = await WorkRequest.findByIdAndDelete(id);
-    if (!deleted) return res.status(404).json({ error: 'Work Request not found' });
-    
-    // Also delete associated work order if exists
-    await WorkOrder.deleteOne({ wrId: deleted.wrId });
-    
-    res.json({ message: 'Work Request deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete work request' });
+    const asset = await Asset.findById(id);
+    if (!asset) return res.status(404).json({ error: 'Asset not found' });
+    res.json(asset);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch asset' });
   }
 };
+
+export const createAsset = async (req: Request, res: Response) => {
+  try {
+    const { assetNo } = req.body;
+    if (!assetNo) {
+      return res.status(400).json({ error: 'Asset No is required' });
+    }
+
+    const existing = await Asset.findOne({ assetNo: assetNo.trim() });
+    if (existing) {
+      return res.status(409).json({ 
+        error: `Asset with Asset No "${assetNo}" already exists!`,
+        duplicate: true 
+      });
+    }
+
+    // Auto calculate row sequence 'no' if not provided
+    if (!req.body.no) {
+      const count = await Asset.countDocuments();
+      req.body.no = count + 1;
+    }
+
+    const newAsset = await Asset.create(req.body);
+    console.log(`✅ Created asset: ${newAsset.assetNo} - ${newAsset.assetName}`);
+    res.status(201).json(newAsset);
+  } catch (err: any) {
+    console.error(`❌ Create asset error: ${err.message}`);
+    res.status(500).json({ error: err.message || 'Failed to create asset' });
+  }
+};
+
+export const updateAsset = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updateData = { ...req.body, updatedAt: new Date() };
+
+    // Check if updating assetNo to one that belongs to another asset
+    if (updateData.assetNo) {
+      const existing = await Asset.findOne({ 
+        assetNo: updateData.assetNo.trim(), 
+        _id: { $ne: id } 
+      });
+      if (existing) {
+        return res.status(409).json({ 
+          error: `Asset No "${updateData.assetNo}" is already in use by another asset!`,
+          duplicate: true 
+        });
+      }
+    }
+
+    const updated = await Asset.findByIdAndUpdate(id, updateData, { new: true });
+    if (!updated) return res.status(404).json({ error: 'Asset not found' });
+    res.json(updated);
+  } catch (err: any) {
+    console.error(`❌ Update asset error: ${err.message}`);
+    res.status(500).json({ error: 'Failed to update asset' });
+  }
+};
+
+export const deleteAsset = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await Asset.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ error: 'Asset not found' });
+    res.json({ message: 'Asset deleted successfully', assetNo: deleted.assetNo });
+  } catch (err: any) {
+    console.error(`❌ Delete asset error: ${err.message}`);
+    res.status(500).json({ error: 'Failed to delete asset' });
+  }
+};
+
+export const bulkUploadAssets = async (req: Request, res: Response) => {
+  try {
+    const { assets = [], duplicateStrategy = 'skip' } = req.body;
+    if (!Array.isArray(assets) || assets.length === 0) {
+      return res.status(400).json({ error: 'No assets provided for bulk upload' });
+    }
+
+    console.log(`📦 Bulk upload received ${assets.length} items. Strategy: ${duplicateStrategy}`);
+
+    // Clean and validate assets
+    const cleanedAssets: any[] = [];
+    const seenInFile = new Set<string>();
+    const fileDuplicates: string[] = [];
+
+    assets.forEach((item, index) => {
+      const rawAssetNo = item.assetNo || item['Asset No.'] || item['Asset No'] || item['asset_no'];
+      const assetNo = rawAssetNo ? String(rawAssetNo).trim() : '';
+      const assetName = item.assetName || item['Asset Name'] || item['asset_name'] || 'Unnamed Asset';
+
+      if (!assetNo) return; // Skip if no assetNo
+
+      if (seenInFile.has(assetNo)) {
+        fileDuplicates.push(assetNo);
+        return; // Skip duplicate inside the same uploaded file
+      }
+      seenInFile.add(assetNo);
+
+      // Map fields cleanly
+      const mapped = {
+        no: Number(item.no || item['No.'] || item['No'] || index + 1),
+        assetName: String(assetName).trim(),
+        assetNo,
+        serialNumber: String(item.serialNumber || item['Serial Number'] || '').trim(),
+        model: String(item.model || item['Model'] || '').trim(),
+        manufacturerName: String(item.manufacturerName || item['Manufacturer Name'] || '').trim(),
+        supplierName: String(item.supplierName || item['Supplier Name'] || '').trim(),
+        supplierContactNo: String(item.supplierContactNo || item['Supplier Contact No.'] || item['Supplier Contact No'] || '').trim(),
+        location: String(item.location || item['Location'] || 'General').trim(),
+        department: String(item.department || item['Department'] || item.location || 'General').trim(),
+        warrantyPeriod: String(item.warrantyPeriod || item['Warranty Period'] || '').trim(),
+        startOfWarranty: item.startOfWarranty || item['Start of Warranty'] ? new Date(item.startOfWarranty || item['Start of Warranty']) : undefined,
+        endOfWarranty: item.endOfWarranty || item['End of Warranty'] ? new Date(item.endOfWarranty || item['End of Warranty']) : undefined,
+        ppmFrequency: String(item.ppmFrequency || item['PPM Frequency'] || 'Quarterly').trim(),
+        ppm1Planned: item.ppm1Planned || item['1st PPM Planned'] ? new Date(item.ppm1Planned || item['1st PPM Planned']) : undefined,
+        ppm1Actual: item.ppm1Actual || item['1st PPM Actual'] ? new Date(item.ppm1Actual || item['1st PPM Actual']) : undefined,
+        ppm2Planned: item.ppm2Planned || item['2nd PPM Planned'] ? new Date(item.ppm2Planned || item['2nd PPM Planned']) : undefined,
+        ppm2Actual: item.ppm2Actual || item['2nd PPM Actual'] ? new Date(item.ppm2Actual || item['2nd PPM Actual']) : undefined,
+        ppm3Planned: item.ppm3Planned || item['3rd PPM Planned'] ? new Date(item.ppm3Planned || item['3rd PPM Planned']) : undefined,
+        ppm3Actual: item.ppm3Actual || item['3rd PPM Actual'] ? new Date(item.ppm3Actual || item['3rd PPM Actual']) : undefined,
+        ppm4Planned: item.ppm4Planned || item['4th PPM Planned'] ? new Date(item.ppm4Planned || item['4th PPM Planned']) : undefined,
+        ppm4Actual: item.ppm4Actual || item['4th PPM Actual'] ? new Date(item.ppm4Actual || item['4th PPM Actual']) : undefined,
+        ppm5Planned: item.ppm5Planned || item['5th PPM Planned'] ? new Date(item.ppm5Planned || item['5th PPM Planned']) : undefined,
+        ppm5Actual: item.ppm5Actual || item['5th PPM Actual'] ? new Date(item.ppm5Actual || item['5th PPM Actual']) : undefined,
+        ppm6Planned: item.ppm6Planned || item['6th PPM Planned'] ? new Date(item.ppm6Planned || item['6th PPM Planned']) : undefined,
+        ppm6Actual: item.ppm6Actual || item['6th PPM Actual'] ? new Date(item.ppm6Actual || item['6th PPM Actual']) : undefined,
+        poNo: String(item.poNo || item['PO No.'] || item['PO No'] || '').trim(),
+        doNo: String(item.doNo || item['DO No.'] || item['DO No'] || '').trim(),
+        invoiceNo: String(item.invoiceNo || item['Invoice No.'] || item['Invoice No'] || '').trim(),
+        totalAmount: Number(item.totalAmount || item['Total Amount'] || 0) || 0,
+        lifespan: String(item.lifespan || item['Lifespan'] || '').trim(),
+        assetCriticality: ['Critical', 'High', 'Medium', 'Low'].includes(item.assetCriticality || item['Asset Criticality']) ? (item.assetCriticality || item['Asset Criticality']) : 'Medium',
+        assetCategory: String(item.assetCategory || item['Asset Category'] || 'Medical Equipment').trim(),
+        typeOfEquipmentSafety: String(item.typeOfEquipmentSafety || item['Type of Equipment Safety'] || 'Class I').trim(),
+        status: ['Active', 'Under Maintenance', 'In Repair', 'Decommissioned', 'Inactive'].includes(item.status || item['Status']) ? (item.status || item['Status']) : 'Active',
+        licenseEndDate: item.licenseEndDate || item['License End Date'] ? new Date(item.licenseEndDate || item['License End Date']) : undefined,
+        documents: []
+      };
+
+      cleanedAssets.push(mapped);
+    });
+
+    // Find which assetNos already exist in DB
+    const incomingAssetNos = cleanedAssets.map(a => a.assetNo);
+    const existingInDb = await Asset.find({ assetNo: { $in: incomingAssetNos } }, { assetNo: 1 }).lean();
+    const existingSet = new Set(existingInDb.map(d => d.assetNo));
+
+    let insertedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const skippedList: string[] = [];
+
+    if (duplicateStrategy === 'skip') {
+      const toInsert: any[] = [];
+      for (const asset of cleanedAssets) {
+        if (existingSet.has(asset.assetNo)) {
+          skippedCount++;
+          skippedList.push(asset.assetNo);
+        } else {
+          toInsert.push(asset);
+        }
+      }
+      if (toInsert.length > 0) {
+        const result = await Asset.insertMany(toInsert, { ordered: false });
+        insertedCount = result.length;
+      }
+    } else {
+      // 'update' strategy: Upsert each asset
+      const bulkOps = cleanedAssets.map(asset => ({
+        updateOne: {
+          filter: { assetNo: asset.assetNo },
+          update: { $set: asset },
+          upsert: true
+        }
+      }));
+      if (bulkOps.length > 0) {
+        const result = await Asset.bulkWrite(bulkOps);
+        insertedCount = result.upsertedCount || 0;
+        updatedCount = result.modifiedCount || 0;
+      }
+    }
+
+    console.log(`✅ Bulk upload complete: ${insertedCount} inserted, ${updatedCount} updated, ${skippedCount} skipped`);
+    res.json({
+      success: true,
+      totalUploaded: assets.length,
+      processed: cleanedAssets.length,
+      insertedCount,
+      updatedCount,
+      skippedCount,
+      skippedList: skippedList.slice(0, 50),
+      fileDuplicates
+    });
+  } catch (err: any) {
+    console.error(`❌ Bulk upload error: ${err.message}`);
+    res.status(500).json({ error: 'Failed to process bulk upload', details: err.message });
+  }
+};
+
+export const addAssetDocument = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, type, url, fileSize, expiryDate, notes } = req.body;
+
+    if (!name || !url) {
+      return res.status(400).json({ error: 'Document name and file are required' });
+    }
+
+    const docId = `DOC-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const newDoc = {
+      id: docId,
+      name,
+      type: type || 'Other',
+      url,
+      fileSize: fileSize || '',
+      uploadDate: new Date(),
+      expiryDate: expiryDate ? new Date(expiryDate) : undefined,
+      notes: notes || ''
+    };
+
+    const asset = await Asset.findByIdAndUpdate(
+      id,
+      { 
+        $push: { documents: newDoc },
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    if (!asset) return res.status(404).json({ error: 'Asset not found' });
+    res.status(201).json({ message: 'Document added successfully', document: newDoc, asset });
+  } catch (err: any) {
+    console.error(`❌ Add document error: ${err.message}`);
+    res.status(500).json({ error: 'Failed to add document' });
+  }
+};
+
+export const deleteAssetDocument = async (req: Request, res: Response) => {
+  try {
+    const { id, docId } = req.params;
+    const asset = await Asset.findByIdAndUpdate(
+      id,
+      { 
+        $pull: { documents: { id: docId } },
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    if (!asset) return res.status(404).json({ error: 'Asset not found' });
+    res.json({ message: 'Document removed successfully', asset });
+  } catch (err: any) {
+    console.error(`❌ Delete document error: ${err.message}`);
+    res.status(500).json({ error: 'Failed to delete document' });
+  }
+};
+
