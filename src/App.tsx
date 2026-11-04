@@ -31,12 +31,16 @@ import {
   RotateCcw,
   Menu,
   X,
+  Video,
+  Download,
+  Eye,
   Boxes
 } from 'lucide-react';
 import { AssetDashboardView } from '@/components/assets/AssetDashboardView';
 import { DepartmentAssetsSection } from '@/components/assets/DepartmentAssetsSection';
 import { Asset } from '@/components/assets/types';
 import { DEFAULT_HOSPITAL_ASSETS } from '@/components/assets/initialAssets';
+import { Toaster, toast } from 'sonner';
 import { 
   BarChart, 
   Bar, 
@@ -83,9 +87,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { motion, AnimatePresence } from 'motion/react';
+import API_BASE_URL from './config';
 
 // --- Types ---
-type View = 'dashboard' | 'assets' | 'work-requests' | 'work-orders' | 'reports' | 'settings' | 'work-request-detail' | 'user-management';
+type View = 'dashboard' | 'assets' | 'work-requests' | 'work-orders' | 'reports' | 'settings' | 'work-request-detail' | 'user-management' | 'category-management';
 
 interface User {
   _id: string;
@@ -95,6 +100,8 @@ interface User {
   role: 'admin' | 'manager' | 'supervisor' | 'technician' | 'staff';
   department: string;
   avatar?: string;
+  password?: string;
+  createdAt?: string;
 }
 
 interface Stats {
@@ -119,19 +126,29 @@ interface WorkRequest {
   floor?: string;
   room?: string;
   location: string;
+  pic: string;
+  contactNumber: string;
   category: string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   status: string;
   description: string;
   imageUrl?: string;
+  videoUrl?: string;
   activities?: {
     action: string;
     user: string;
     timestamp: string;
     note?: string;
     imageUrl?: string;
+    videoUrl?: string;
   }[];
   createdAt: string;
+}
+
+interface Category {
+  _id: string;
+  name: string;
+  description?: string;
 }
 
 interface WorkOrder {
@@ -222,7 +239,8 @@ const Sidebar = ({ currentView, setView, user, onSignOut, isOpen, onClose }: { c
     { id: 'work-orders', label: 'Work Orders', icon: Wrench, roles: ['admin', 'manager', 'supervisor', 'technician'] },
     { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'manager'] },
     { id: 'user-management', label: 'User Management', icon: UserPlus, roles: ['admin', 'manager'] },
-    { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin', 'manager', 'supervisor'] },
+    { id: 'category-management', label: 'Categories', icon: ClipboardCheck, roles: ['admin', 'manager'] },
+    { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin', 'manager', 'supervisor', 'technician', 'staff'] },
   ];
 
   const filteredItems = menuItems.filter(item => !user || item.roles.includes(user.role));
@@ -311,7 +329,7 @@ const Header = ({ title, user, onSignOut, setView, onMenuClick }: { title: strin
         </Button>
         <div>
           <h2 className="text-lg lg:text-xl font-bold truncate max-w-[150px] lg:max-w-none">{title}</h2>
-          <p className="hidden sm:block text-xs text-muted-foreground">Wednesday, April 8, 2026</p>
+          <p className="hidden sm:block text-xs text-muted-foreground">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
       </div>
       <div className="flex items-center gap-4">
@@ -461,8 +479,9 @@ const TechnicianDashboard = ({ requests = [], orders = [], user, onSelectRequest
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-blue-600 cursor-pointer hover:underline" onClick={() => {
-                        const req = requests.find(r => r.wrId === task.wrId);
-                        if (req) onSelectRequest(req._id);
+                        const req = requests.find(r => String(r.wrId) === String(task.wrId));
+                        if (req) onSelectRequest(String(req._id));
+                        else toast.error("Could not find source request");
                       }}>
                         {task.wrId}
                       </span>
@@ -474,8 +493,9 @@ const TechnicianDashboard = ({ requests = [], orders = [], user, onSelectRequest
                     <p className="text-xs text-muted-foreground">Assigned: {new Date(task.createdAt).toLocaleDateString()}</p>
                   </div>
                   <Button size="sm" variant="outline" onClick={() => {
-                    const req = requests.find(r => r.wrId === task.wrId);
-                    if (req) onSelectRequest(req._id);
+                    const req = requests.find(r => String(r.wrId) === String(task.wrId));
+                    if (req) onSelectRequest(String(req._id));
+                    else toast.error("Could not find source request");
                   }}>
                     View Details
                   </Button>
@@ -516,12 +536,7 @@ const TechnicianDashboard = ({ requests = [], orders = [], user, onSelectRequest
           </CardContent>
         </Card>
       </div>
-
-      <DepartmentAssetsSection 
-        assets={assets} 
-        userDepartment={user?.department || 'Medical Equipment'} 
-        userName={user?.name} 
-      />
+      <DepartmentAssetsSection assets={assets} userDepartment={user?.department} />
     </div>
   );
 };
@@ -538,7 +553,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user, a
 
   // Filter requests based on role for the table
   const tableRequests = user?.role === 'staff' 
-    ? safeRequests.filter(r => r.userId === user._id)
+    ? safeRequests.filter(r => String(r.userId) === String(user._id))
     : safeRequests;
 
   if (user?.role === 'technician') {
@@ -593,7 +608,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user, a
             <CardHeader>
               <CardTitle className="text-base font-semibold">Tickets by Category</CardTitle>
             </CardHeader>
-            <CardContent className="h-[300px]">
+            <CardContent className="min-h-[300px] h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={categoryData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -613,7 +628,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user, a
             <CardHeader>
               <CardTitle className="text-base font-semibold">SLA Compliance</CardTitle>
             </CardHeader>
-            <CardContent className="h-[300px] flex flex-col items-center justify-center">
+            <CardContent className="min-h-[300px] h-[300px] flex flex-col items-center justify-center">
               <ResponsiveContainer width="100%" height="80%">
                 <PieChart>
                   <Pie
@@ -669,7 +684,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user, a
             <TableBody>
               {tableRequests.slice(0, 5).map((req) => (
                 <TableRow key={req._id}>
-                  <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(req._id)}>{req.wrId}</TableCell>
+                  <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(String(req._id))}>{req.wrId}</TableCell>
                   <TableCell>
                     {req.imageUrl ? (
                       <div className="w-8 h-8 rounded border overflow-hidden">
@@ -712,14 +727,8 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user, a
           </Table>
         </CardContent>
       </Card>
-
-      {/* For other users, show their department assets in their dashboard (Read-Only) */}
       {user?.role !== 'admin' && (
-        <DepartmentAssetsSection
-          assets={assets}
-          userDepartment={user?.department || 'Cardiology'}
-          userName={user?.name}
-        />
+        <DepartmentAssetsSection assets={assets} userDepartment={user?.department} />
       )}
     </div>
   );
@@ -731,17 +740,36 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [priorityFilter, setPriorityFilter] = useState('ALL');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'createdAt', direction: 'desc' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [newRequest, setNewRequest] = useState({
     userName: user?.name || '',
     department: user?.department || '',
     block: '',
     floor: '',
     room: '',
+    pic: '',
+    contactNumber: '',
     category: '',
     priority: 'MEDIUM',
     description: '',
-    imageUrl: ''
+    imageUrl: '',
+    videoUrl: ''
   });
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/categories`);
+      const data = await res.json();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch categories:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -755,7 +783,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
 
   const safeRequests = Array.isArray(requests) ? requests : [];
   const displayRequests = user?.role === 'staff'
-    ? safeRequests.filter(r => r.userId === user._id)
+    ? safeRequests.filter(r => String(r.userId) === String(user._id))
     : safeRequests;
 
   const handleSort = (key: string) => {
@@ -808,10 +836,29 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
     }
   };
 
+  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit for MongoDB document safety
+        toast.error('Video size exceeds 10MB limit. Base64 encoding for larger videos is not supported by the database limit.');
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewRequest(prev => ({ ...prev, videoUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    
+    setIsSubmitting(true);
     try {
-      const res = await fetch('/api/work-requests', {
+      const res = await fetch(`${API_BASE_URL}/api/work-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -823,20 +870,48 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
       if (res.ok) {
         setIsModalOpen(false);
         onRefresh();
+        toast.success('Work request created successfully');
         setNewRequest({ 
           userName: user?.name || '', 
           department: user?.department || '', 
           block: '', 
           floor: '', 
           room: '', 
+          pic: '',
+          contactNumber: '',
           category: '', 
           priority: 'MEDIUM', 
           description: '', 
-          imageUrl: '' 
+          imageUrl: '',
+          videoUrl: ''
         });
+      } else {
+        const errorData = await res.json();
+        toast.error(`Error: ${errorData.details || errorData.error || 'Failed to create request'}`);
+      }
+    } catch (err: any) {
+      console.error('Failed to create request:', err);
+      toast.error('Network error or server is unreachable. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this work request? This will also delete any linked work orders.')) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/work-requests/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        onRefresh();
+        toast.success('Work request deleted successfully');
+      } else {
+        toast.error('Failed to delete work request');
       }
     } catch (err) {
-      console.error('Failed to create request:', err);
+      console.error('Failed to delete request:', err);
+      toast.error('Error deleting work request');
     }
   };
 
@@ -914,17 +989,40 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label htmlFor="pic">PIC Name</Label>
+                  <Input 
+                    id="pic"
+                    placeholder="Person in charge" 
+                    value={newRequest.pic}
+                    onChange={(e) => setNewRequest({...newRequest, pic: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="contactNumber">Contact Number</Label>
+                  <Input 
+                    id="contactNumber"
+                    placeholder="Phone number" 
+                    value={newRequest.contactNumber}
+                    onChange={(e) => setNewRequest({...newRequest, contactNumber: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label>Category</Label>
                   <Select onValueChange={(v) => setNewRequest({...newRequest, category: v})} required>
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Medical Equipment">Medical Equipment</SelectItem>
-                      <SelectItem value="HVAC">HVAC</SelectItem>
-                      <SelectItem value="Electrical">Electrical</SelectItem>
-                      <SelectItem value="Plumbing">Plumbing</SelectItem>
-                      <SelectItem value="Cleaning">Cleaning</SelectItem>
+                      {categories.length > 0 ? categories.map(cat => (
+                        <SelectItem key={cat._id} value={cat.name}>{cat.name}</SelectItem>
+                      )) : (
+                        <SelectItem value="Other" disabled>No categories available</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -956,9 +1054,9 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="image">Attach Image (Optional)</Label>
-                <div className="flex items-center gap-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="image">Attach Image (Optional)</Label>
                   <Input 
                     id="image"
                     type="file" 
@@ -966,24 +1064,50 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                     onChange={handleFileChange}
                     className="cursor-pointer"
                   />
+                  {newRequest.imageUrl && (
+                    <div className="mt-2 relative w-20 h-20 border rounded overflow-hidden">
+                      <img src={newRequest.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <button 
+                        type="button"
+                        onClick={() => setNewRequest(prev => ({ ...prev, imageUrl: '' }))}
+                        className="absolute top-0 right-0 bg-red-500 text-white p-1 rounded-bl text-[10px]"
+                      >
+                        X
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {newRequest.imageUrl && (
-                  <div className="mt-2 relative w-20 h-20 border rounded overflow-hidden">
-                    <img src={newRequest.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                    <button 
-                      type="button"
-                      onClick={() => setNewRequest(prev => ({ ...prev, imageUrl: '' }))}
-                      className="absolute top-0 right-0 bg-red-500 text-white p-1 rounded-bl text-[10px]"
-                    >
-                      X
-                    </button>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <Label htmlFor="video">Attach Video (Optional)</Label>
+                  <Input 
+                    id="video"
+                    type="file" 
+                    accept="video/*"
+                    onChange={handleVideoChange}
+                    className="cursor-pointer"
+                  />
+                  {newRequest.videoUrl && (
+                    <div className="mt-2 relative w-20 h-20 border rounded overflow-hidden">
+                      <div className="w-full h-full bg-slate-900 flex items-center justify-center">
+                        <Video size={16} className="text-white" />
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setNewRequest(prev => ({ ...prev, videoUrl: '' }))}
+                        className="absolute top-0 right-0 bg-red-500 text-white p-1 rounded-bl text-[10px]"
+                      >
+                        X
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Submit Request</Button>
+                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSubmitting}>Cancel</Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={isSubmitting}>
+                  {isSubmitting ? 'Submitting...' : 'Submit Request'}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -1048,20 +1172,25 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                 <TableHead><SortButton label="Priority" sortKey="priority" currentSort={sortConfig} onSort={handleSort} /></TableHead>
                 <TableHead><SortButton label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} /></TableHead>
                 <TableHead><SortButton label="Created Date" sortKey="createdAt" currentSort={sortConfig} onSort={handleSort} /></TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedRequests.map((req) => (
-                <TableRow key={req._id}>
-                  <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(req._id)}>{req.wrId}</TableCell>
+                <TableRow key={req._id} className="hover:bg-gray-50/50">
+                  <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(String(req._id))}>{req.wrId}</TableCell>
                   <TableCell>
                     {req.imageUrl ? (
                       <div className="w-10 h-10 rounded border overflow-hidden">
                         <img src={req.imageUrl} alt="Request" className="w-full h-full object-cover" />
                       </div>
+                    ) : req.videoUrl ? (
+                      <div className="w-10 h-10 rounded border bg-slate-900 flex items-center justify-center text-white">
+                        <Video size={16} />
+                      </div>
                     ) : (
-                      <div className="w-10 h-10 rounded border bg-gray-50 flex items-center justify-center text-[10px] text-gray-400">
-                        No Image
+                      <div className="w-10 h-10 rounded border bg-gray-50 flex items-center justify-center text-[8px] text-gray-400 text-center leading-tight">
+                        No<br/>Attachment
                       </div>
                     )}
                   </TableCell>
@@ -1086,6 +1215,18 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 h-8 w-8" onClick={() => onSelectRequest(String(req._id))} title="View Details">
+                        <Eye size={16} />
+                      </Button>
+                      {isAdminLike(user) && (
+                        <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8" onClick={(e) => handleDelete(e, req._id)} title="Delete">
+                          <XCircle size={16} />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -1096,18 +1237,37 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
   );
 };
 
-const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: WorkRequest | undefined, onBack: () => void, onRefresh: () => void, user: User | null }) => {
+const WorkRequestDetailView = ({ request: initialRequest, onBack, onRefresh, user }: { request: WorkRequest | undefined, onBack: () => void, onRefresh: () => void, user: User | null }) => {
+  const [request, setRequest] = useState<WorkRequest | undefined>(initialRequest);
   const [technicians, setTechnicians] = useState<User[]>([]);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedTech, setSelectedTech] = useState<string>('');
   const [updateNote, setUpdateNote] = useState('');
   const [updateImage, setUpdateImage] = useState<string | null>(null);
+  const [updateVideo, setUpdateVideo] = useState<string | null>(null);
   const [isPosting, setIsPosting] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  const fetchFullDetails = async () => {
+    if (!initialRequest) return;
+    try {
+      setLoadingDetails(true);
+      const res = await fetch(`${API_BASE_URL}/api/work-requests/${initialRequest._id}`);
+      const data = await res.json();
+      if (data && !data.error) {
+        setRequest(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch full request details:', err);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
 
   useEffect(() => {
     const fetchTechs = async () => {
       try {
-        const res = await fetch('/api/users');
+        const res = await fetch(`${API_BASE_URL}/api/users`);
         const data = await res.json();
         if (Array.isArray(data)) {
           setTechnicians(data.filter(u => u.role === 'technician'));
@@ -1119,7 +1279,31 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
     fetchTechs();
   }, []);
 
-  if (!request) return <div className="p-8">Request not found</div>;
+  useEffect(() => {
+    if (initialRequest) {
+      // If activities or extra details are missing (optimized list), fetch them
+      if (!initialRequest.activities || initialRequest.activities.length === 0) {
+        fetchFullDetails();
+      } else {
+        setRequest(initialRequest);
+      }
+    }
+  }, [initialRequest]);
+
+  if (loadingDetails) return (
+    <div className="p-10 flex flex-col items-center justify-center space-y-4">
+      <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <p className="text-sm text-muted-foreground font-medium">Loading ticket details...</p>
+    </div>
+  );
+
+  if (!request) return (
+    <div className="p-8 text-center flex flex-col items-center gap-4">
+      <AlertCircle size={40} className="text-gray-400" />
+      <p className="text-muted-foreground">Request not found.</p>
+      <Button onClick={onBack}>Go Back</Button>
+    </div>
+  );
 
   const handleStatusUpdate = async (status: string, note: string) => {
     try {
@@ -1130,16 +1314,20 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
         note
       };
       
-      const res = await fetch(`/api/work-requests/${request._id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/work-requests/${request._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, activity })
       });
       if (res.ok) {
         onRefresh();
+        toast.success(`Status updated to ${status}`);
+      } else {
+        toast.error('Failed to update status');
       }
     } catch (err) {
       console.error('Failed to update status:', err);
+      toast.error('Error updating status');
     }
   };
 
@@ -1148,7 +1336,7 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
     if (!tech) return;
 
     try {
-      const res = await fetch('/api/work-orders', {
+      const res = await fetch(`${API_BASE_URL}/api/work-orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1163,15 +1351,19 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
       if (res.ok) {
         setIsAssignModalOpen(false);
         onRefresh();
+        toast.success(`Technician ${tech.name} assigned successfully`);
+      } else {
+        toast.error('Failed to assign technician');
       }
     } catch (err) {
       console.error('Failed to assign technician:', err);
+      toast.error('Error assigning technician');
     }
   };
 
   const handleAddActivity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!updateNote.trim() && !updateImage) return;
+    if (!updateNote.trim() && !updateImage && !updateVideo) return;
 
     setIsPosting(true);
     try {
@@ -1180,10 +1372,11 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
         user: user?.name || 'User',
         timestamp: new Date(),
         note: updateNote,
-        imageUrl: updateImage || undefined
+        imageUrl: updateImage || undefined,
+        videoUrl: updateVideo || undefined
       };
 
-      const res = await fetch(`/api/work-requests/${request._id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/work-requests/${request._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ activity })
@@ -1192,10 +1385,16 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
       if (res.ok) {
         setUpdateNote('');
         setUpdateImage(null);
+        setUpdateVideo(null);
         onRefresh();
+        toast.success('Activity update posted');
+      } else {
+        const errorData = await res.json();
+        toast.error(`Error: ${errorData.details || errorData.error || 'Failed to post update'}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to add activity:', err);
+      toast.error('Failed to post update. Please try again.');
     } finally {
       setIsPosting(false);
     }
@@ -1299,6 +1498,24 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                   </Badge>
                 </div>
               </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-gray-50 rounded text-gray-500">
+                  <UserPlus size={18} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">PIC</p>
+                  <p className="text-sm font-medium">{request.pic || 'N/A'}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-gray-50 rounded text-gray-500">
+                  <Send size={18} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Contact Number</p>
+                  <p className="text-sm font-medium">{request.contactNumber || 'N/A'}</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -1314,16 +1531,36 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
             </CardContent>
           </Card>
 
-          {/* Attachment */}
-          {request.imageUrl && (
+          {/* Attachments */}
+          {(request.imageUrl || request.videoUrl) && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base font-semibold">Initial Attachment</CardTitle>
+                <CardTitle className="text-base font-semibold">Initial Attachments</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="rounded-lg border overflow-hidden bg-gray-50">
-                  <img src={request.imageUrl} alt="Request Attachment" className="w-full h-auto max-h-[500px] object-contain mx-auto" />
-                </div>
+              <CardContent className="space-y-4">
+                {request.imageUrl && (
+                  <div className="rounded-lg border overflow-hidden bg-gray-50">
+                    <img src={request.imageUrl} alt="Request Attachment" className="w-full h-auto max-h-[500px] object-contain mx-auto" />
+                  </div>
+                )}
+                {request.videoUrl && (
+                  <div className="rounded-lg border overflow-hidden bg-black aspect-video relative group">
+                    <video 
+                      src={request.videoUrl} 
+                      controls 
+                      playsInline
+                      className="w-full h-full max-h-[500px]"
+                    />
+                    <a 
+                      href={request.videoUrl} 
+                      download={`video-${request.wrId}.mp4`}
+                      className="absolute top-2 right-2 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 text-white"
+                      title="Download Video"
+                    >
+                      <Download size={18} />
+                    </a>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1346,42 +1583,76 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <Label htmlFor="update-image" className="cursor-pointer flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
-                      <Camera size={18} />
-                      <span>{updateImage ? 'Change Image' : 'Add Image'}</span>
-                      <input 
-                        id="update-image" 
-                        type="file" 
-                        accept="image/*" 
-                        className="hidden" 
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => setUpdateImage(reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
-                        }}
-                      />
-                    </Label>
-                    {updateImage && (
-                      <Button type="button" variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setUpdateImage(null)}>Remove</Button>
-                    )}
+                    <div className="flex items-center gap-4">
+                      <Label htmlFor="update-image" className="cursor-pointer flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
+                        <Camera size={18} />
+                        <span>{updateImage ? 'Img Added' : 'Add Image'}</span>
+                        <input 
+                          id="update-image" 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => setUpdateImage(reader.result as string);
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </Label>
+                      {updateImage && (
+                        <Button type="button" variant="ghost" size="sm" className="p-1 h-auto text-red-500 hover:text-red-600" onClick={() => setUpdateImage(null)}><X size={14} /></Button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4 border-l pl-4">
+                      <Label htmlFor="update-video" className="cursor-pointer flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
+                        <Video size={18} />
+                        <span>{updateVideo ? 'Vid Added' : 'Add Video'}</span>
+                        <input 
+                          id="update-video" 
+                          type="file" 
+                          accept="video/*" 
+                          className="hidden" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 10 * 1024 * 1024) {
+                                toast.error('Video exceeds 10MB limit (Database constraint)');
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onloadend = () => setUpdateVideo(reader.result as string);
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </Label>
+                      {updateVideo && (
+                        <Button type="button" variant="ghost" size="sm" className="p-1 h-auto text-red-500 hover:text-red-600" onClick={() => setUpdateVideo(null)}><X size={14} /></Button>
+                      )}
+                    </div>
                   </div>
-                  <Button type="submit" disabled={isPosting || (!updateNote.trim() && !updateImage)} className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2 px-6">
+                  <Button type="submit" disabled={isPosting || (!updateNote.trim() && !updateImage && !updateVideo)} className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2 px-6">
                     <Send size={16} />
                     {isPosting ? 'Posting...' : 'Post Update'}
                   </Button>
                 </div>
 
-                {updateImage && (
-                  <div className="mt-4 relative w-32 h-32 rounded-md border overflow-hidden group">
-                    <img src={updateImage} alt="Preview" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <p className="text-white text-[10px] font-medium">Preview</p>
+                <div className="flex gap-4">
+                  {updateImage && (
+                    <div className="mt-4 relative w-24 h-24 rounded-md border overflow-hidden group">
+                      <img src={updateImage} alt="Preview" className="w-full h-full object-cover" />
                     </div>
-                  </div>
-                )}
+                  )}
+                  {updateVideo && (
+                    <div className="mt-4 relative w-24 h-24 rounded-md border overflow-hidden bg-slate-900 flex items-center justify-center">
+                      <Video size={20} className="text-white" />
+                    </div>
+                  )}
+                </div>
               </form>
             </CardContent>
           </Card>
@@ -1408,16 +1679,36 @@ const WorkRequestDetailView = ({ request, onBack, onRefresh, user }: { request: 
                         <div className="space-y-2 flex-1">
                           <p className="text-sm font-semibold">{activity.action}</p>
                           <p className="text-xs text-muted-foreground leading-relaxed">{activity.note} by <span className="font-medium text-gray-700">{activity.user}</span></p>
-                          {activity.imageUrl && (
-                            <div className="mt-3 rounded-lg border overflow-hidden max-w-sm bg-gray-50">
-                              <img 
-                                src={activity.imageUrl} 
-                                alt="Activity attachment" 
-                                className="w-full h-auto max-h-[300px] object-contain" 
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
-                          )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                            {activity.imageUrl && (
+                              <div className="rounded-lg border overflow-hidden bg-gray-50">
+                                <img 
+                                  src={activity.imageUrl} 
+                                  alt="Activity attachment" 
+                                  className="w-full h-auto max-h-[300px] object-contain" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            )}
+                            {activity.videoUrl && (
+                              <div className="rounded-lg border overflow-hidden bg-black aspect-video relative group flex items-center justify-center">
+                                <video 
+                                  src={activity.videoUrl} 
+                                  controls 
+                                  playsInline
+                                  className="w-full h-full max-h-[300px]" 
+                                />
+                                <a 
+                                  href={activity.videoUrl} 
+                                  download={`video-activity-${i}.mp4`}
+                                  className="absolute top-2 right-2 bg-white/20 hover:bg-white/40 p-1.5 rounded-full backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 text-white"
+                                  title="Download Video"
+                                >
+                                  <Download size={14} />
+                                </a>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <p className="text-[10px] font-medium text-muted-foreground bg-gray-50 px-2 py-1 rounded border">
                           {new Date(activity.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1578,7 +1869,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'createdAt', direction: 'desc' });
 
   const fetchTechs = async () => {
-    const res = await fetch('/api/users');
+    const res = await fetch(`${API_BASE_URL}/api/users`);
     const data = await res.json();
     setTechnicians(Array.isArray(data) ? data.filter((u: User) => u.role === 'technician') : []);
   };
@@ -1591,7 +1882,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
     if (!selectedWR || !selectedTech) return;
     const tech = technicians.find(t => t._id === selectedTech);
     try {
-      const res = await fetch('/api/work-orders', {
+      const res = await fetch(`${API_BASE_URL}/api/work-orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1605,15 +1896,19 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
       if (res.ok) {
         setIsAssignModalOpen(false);
         onRefresh();
+        toast.success(`Work order assigned to ${tech?.name}`);
+      } else {
+        toast.error('Failed to create work order');
       }
     } catch (err) {
       console.error('Failed to assign:', err);
+      toast.error('Error creating work order');
     }
   };
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      const res = await fetch(`/api/work-orders/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/work-orders/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -1624,9 +1919,13 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
       });
       if (res.ok) {
         onRefresh();
+        toast.success(`Work order status updated to ${status}`);
+      } else {
+        toast.error('Failed to update status');
       }
     } catch (err) {
       console.error('Failed to update status:', err);
+      toast.error('Error updating status');
     }
   };
 
@@ -1682,7 +1981,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
         <StatCard label="Completed" value={orders.filter(o => o.status === 'COMPLETED').length} icon={CheckCircle2} colorClass="bg-green-100 text-green-600" />
       </div>
 
-      {isAdminLike(user) && (
+      {(isAdminLike(user) || user?.role === 'technician') && (
         <>
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold">Unassigned Requests</h3>
@@ -1698,22 +1997,29 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                     <TableHead>Category</TableHead>
                     <TableHead>Priority</TableHead>
                     <TableHead>Department</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {unassignedRequests.map(wr => (
-                    <TableRow key={wr._id}>
-                      <TableCell className="font-medium">{wr.wrId}</TableCell>
+                    <TableRow key={wr._id} className="hover:bg-gray-50/50">
+                      <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(String(wr._id))}>{wr.wrId}</TableCell>
                       <TableCell>{wr.category}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{wr.priority}</Badge>
+                        <Badge variant="outline" className={getPriorityColor(wr.priority)}>{wr.priority}</Badge>
                       </TableCell>
                       <TableCell>{wr.department}</TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" onClick={() => { setSelectedWR(wr); setIsAssignModalOpen(true); }}>
-                          Assign Technician
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-700 h-8 w-8" onClick={() => onSelectRequest(String(wr._id))} title="View Details">
+                            <Eye size={16} />
+                          </Button>
+                          {isAdminLike(user) && (
+                            <Button size="sm" onClick={() => { setSelectedWR(wr); setIsAssignModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700">
+                              Assign
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1793,13 +2099,19 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
             </TableHeader>
             <TableBody>
               {sortedOrders.map((wo) => {
-                const linkedRequest = requests.find(r => r.wrId === wo.wrId);
+                const linkedRequest = requests.find(r => String(r.wrId) === String(wo.wrId));
                 return (
                   <TableRow key={wo._id}>
                     <TableCell className="font-medium">{wo.woId}</TableCell>
                     <TableCell 
                       className="text-blue-600 cursor-pointer hover:underline"
-                      onClick={() => linkedRequest && onSelectRequest(linkedRequest._id)}
+                      onClick={() => {
+                        if (linkedRequest) {
+                          onSelectRequest(String(linkedRequest._id));
+                        } else {
+                          toast.error(`Could not find request details for ${wo.wrId}`);
+                        }
+                      }}
                     >
                       {wo.wrId}
                     </TableCell>
@@ -1815,16 +2127,33 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                         {wo.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      {wo.status === 'ASSIGNED' && (
-                        <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'IN PROGRESS')}>Start</Button>
-                      )}
-                      {wo.status === 'IN PROGRESS' && (
-                        <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'COMPLETED')}>Complete</Button>
-                      )}
-                      {wo.status === 'ON HOLD' && (
-                        <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'IN PROGRESS')}>Resume</Button>
-                      )}
+                    <TableCell className="text-right">
+                      <div className="flex justify-end items-center gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="text-blue-500 hover:text-blue-700 h-8 w-8" 
+                          onClick={() => {
+                            if (linkedRequest) {
+                              onSelectRequest(String(linkedRequest._id));
+                            } else {
+                              toast.error(`Could not find request details for ${wo.wrId}`);
+                            }
+                          }} 
+                          title="View Linked Request"
+                        >
+                          <Eye size={16} />
+                        </Button>
+                        {wo.status === 'ASSIGNED' && (
+                          <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'IN PROGRESS')}>Start</Button>
+                        )}
+                        {wo.status === 'IN PROGRESS' && (
+                          <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'COMPLETED')}>Complete</Button>
+                        )}
+                        {wo.status === 'ON HOLD' && (
+                          <Button variant="outline" size="sm" onClick={() => updateStatus(wo._id, 'IN PROGRESS')}>Resume</Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -1849,7 +2178,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
 
   const handleExport = () => {
     if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
-      alert('Only Admins and Managers can export reports.');
+      toast.error('Only Admins and Managers can export reports.');
       return;
     }
 
@@ -1869,6 +2198,8 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
         'Raised By': req.userName,
         'Department': req.department,
         'Location': `${req.block || ''} ${req.floor || ''} ${req.room || ''}`.trim(),
+        'PIC': req.pic || 'N/A',
+        'Contact Number': req.contactNumber || 'N/A',
         'Category': req.category,
         'Priority': req.priority,
         'Status': req.status,
@@ -1921,8 +2252,9 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
         <CardHeader>
           <CardTitle className="text-base font-semibold">Monthly Ticket Trend</CardTitle>
         </CardHeader>
-        <CardContent className="h-[350px]">
-          <ResponsiveContainer width="100%" height="100%">
+        <CardContent className="min-h-[400px] h-auto">
+          <div className="h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} />
@@ -1933,6 +2265,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
               <Line type="monotone" dataKey="open" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
+          </div>
           <div className="flex justify-center gap-6 mt-4">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-blue-500"></div>
@@ -1955,7 +2288,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
           <CardHeader>
             <CardTitle className="text-base font-semibold">Tickets by Category</CardTitle>
           </CardHeader>
-          <CardContent className="h-[300px]">
+          <CardContent className="min-h-[300px] h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -1981,8 +2314,9 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
           <CardHeader>
             <CardTitle className="text-base font-semibold">SLA Compliance Rate</CardTitle>
           </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="min-h-[400px] h-auto">
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
               <BarChart data={[{ name: 'On Time', value: stats.closed }, { name: 'Delayed', value: stats.total - stats.closed }]}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} />
@@ -1995,6 +2329,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            </div>
             <div className="text-center mt-4">
               <p className="text-2xl font-bold text-green-600">{stats.slaCompliance}%</p>
               <p className="text-xs text-muted-foreground font-medium">Overall SLA Compliance</p>
@@ -2116,7 +2451,7 @@ const UserManagementView = () => {
   });
 
   const fetchUsers = async () => {
-    const res = await fetch('/api/users');
+    const res = await fetch(`${API_BASE_URL}/api/users`);
     const data = await res.json();
     setUsers(Array.isArray(data) ? data : []);
   };
@@ -2128,7 +2463,7 @@ const UserManagementView = () => {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/users', {
+      const res = await fetch(`${API_BASE_URL}/api/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser)
@@ -2147,7 +2482,7 @@ const UserManagementView = () => {
     e.preventDefault();
     if (!editingUser) return;
     try {
-      const res = await fetch(`/api/users/${editingUser._id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/users/${editingUser._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingUser)
@@ -2165,7 +2500,7 @@ const UserManagementView = () => {
   const handleDeleteUser = async (id: string) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
     try {
-      const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/users/${id}`, { method: 'DELETE' });
       if (res.ok) fetchUsers();
     } catch (err) {
       console.error('Failed to delete user:', err);
@@ -2265,8 +2600,8 @@ const UserManagementView = () => {
                 <Input 
                   type="password"
                   placeholder="••••••••" 
-                  value={editingUser ? '' : newUser.password}
-                  onChange={(e) => editingUser ? setEditingUser({...editingUser, password: e.target.value} as any) : setNewUser({...newUser, password: e.target.value})}
+                  value={editingUser ? (editingUser.password || '') : newUser.password}
+                  onChange={(e) => editingUser ? setEditingUser({...editingUser, password: e.target.value}) : setNewUser({...newUser, password: e.target.value})}
                   required={!editingUser}
                 />
               </div>
@@ -2414,6 +2749,157 @@ const UserManagementView = () => {
   );
 };
 
+const CategoryManagementView = ({ user, onRefresh }: { user: User | null, onRefresh: () => void }) => {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState({ name: '', description: '' });
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/categories`);
+      const data = await res.json();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch categories:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCategory)
+      });
+      if (res.ok) {
+        setNewCategory({ name: '', description: '' });
+        setIsModalOpen(false);
+        fetchCategories();
+        onRefresh();
+        toast.success('Category created successfully');
+      } else {
+        const data = await res.json();
+        toast.error(data.error || 'Failed to create category');
+      }
+    } catch (err) {
+      console.error('Failed to create category:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this category?')) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/categories/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchCategories();
+        onRefresh();
+        toast.success('Category deleted successfully');
+      } else {
+        toast.error('Failed to delete category');
+      }
+    } catch (err) {
+      console.error('Failed to delete category:', err);
+      toast.error('Error deleting category');
+    }
+  };
+
+  if (user?.role !== 'admin' && user?.role !== 'manager') {
+    return <div className="p-8">Access Denied</div>;
+  }
+
+  return (
+    <div className="p-4 lg:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-xl lg:text-2xl font-bold">Category Management</h2>
+          <p className="text-sm text-muted-foreground">Manage work request categories for the system</p>
+        </div>
+        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-blue-600 hover:bg-blue-700">
+              <Plus size={18} className="mr-2" /> Add New Category
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Category</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="catName">Category Name</Label>
+                <Input 
+                  id="catName" 
+                  value={newCategory.name} 
+                  onChange={(e) => setNewCategory({...newCategory, name: e.target.value})} 
+                  placeholder="e.g., HVAC, Biomedical"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="catDesc">Description</Label>
+                <textarea 
+                  id="catDesc"
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={newCategory.description} 
+                  onChange={(e) => setNewCategory({...newCategory, description: e.target.value})} 
+                  placeholder="What is this category for?"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+                <Button type="submit" className="bg-blue-600" disabled={isLoading}>
+                  {isLoading ? 'Creating...' : 'Create Category'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Category Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {categories.map((cat) => (
+                <TableRow key={cat._id}>
+                  <TableCell className="font-medium">{cat.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{cat.description || 'No description'}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(cat._id)}>
+                      <XCircle size={18} />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {categories.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">No categories found</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 const SettingsView = ({ user }: { user: User | null }) => {
   return (
     <div className="p-4 lg:p-8 max-w-2xl space-y-8">
@@ -2503,7 +2989,7 @@ const LoginView = ({ onLogin }: { onLogin: (user: User) => void }) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(`${API_BASE_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -2559,12 +3045,12 @@ const LoginView = ({ onLogin }: { onLogin: (user: User) => void }) => {
             <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
-            {/* <div className="text-center text-xs text-muted-foreground">
+            <div className="text-center text-xs text-muted-foreground">
               <p>Demo accounts:</p>
               <p>Admin: admin / password123</p>
               <p>Manager: manager / password123</p>
               <p>Tech: mike / password123</p>
-            </div> */}
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -2582,163 +3068,120 @@ export default function App() {
   });
   const [requests, setRequests] = useState<WorkRequest[]>([]);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [loading, setLoading] = useState(true);
   const [assets, setAssets] = useState<Asset[]>(() => {
-    const saved = localStorage.getItem('mahsa_assets');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('mahsa_assets');
+      if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch (e) {}
+      }
+    } catch (e) {
+      console.error('Failed to parse cached assets', e);
     }
     return DEFAULT_HOSPITAL_ASSETS;
   });
-  const [loading, setLoading] = useState(true);
-
-  const fetchData = async () => {
-    try {
-      const [statsRes, requestsRes, ordersRes] = await Promise.all([
-        fetch('/api/stats'),
-        fetch('/api/work-requests'),
-        fetch('/api/work-orders')
-      ]);
-      const statsData = await statsRes.json();
-      const requestsData = await requestsRes.json();
-      const ordersData = await ordersRes.json();
-      
-      if (statsData && !statsData.error) {
-        setStats(statsData);
-      }
-      
-      if (Array.isArray(requestsData)) {
-        setRequests(requestsData);
-      } else {
-        setRequests([]);
-      }
-
-      if (Array.isArray(ordersData)) {
-        setOrders(ordersData);
-      } else {
-        setOrders([]);
-      }
-
-      // Fetch Assets from API
-      try {
-        const assetsRes = await fetch('/api/assets?limit=2000');
-        if (assetsRes.ok) {
-          const assetsData = await assetsRes.json();
-          if (assetsData && Array.isArray(assetsData.assets) && assetsData.assets.length > 0) {
-            setAssets(assetsData.assets);
-            localStorage.setItem('mahsa_assets', JSON.stringify(assetsData.assets));
-          }
-        }
-      } catch (assetErr) {
-        console.log('Using local assets repository');
-      }
-    } catch (err) {
-      console.error('Failed to fetch data:', err);
-      setRequests([]);
-      setOrders([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleAddAsset = async (newAssetData: Partial<Asset>) => {
+    const tempId = 'ast-' + Date.now();
     const newAsset: Asset = {
+      _id: tempId,
       ...newAssetData,
-      _id: `ast-${Date.now()}`,
-      no: assets.length + 1,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     } as Asset;
 
     try {
-      const res = await fetch('/api/assets', {
+      const res = await fetch(`${API_BASE_URL}/api/assets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newAssetData)
       });
       if (res.ok) {
-        const created = await res.json();
-        newAsset._id = created._id;
+        const saved = await res.json();
+        setAssets(prev => [saved, ...prev]);
+        localStorage.setItem('mahsa_assets', JSON.stringify([saved, ...assets]));
+        toast.success(`Asset "${newAssetData.assetName}" created successfully!`);
+        return;
       }
     } catch (e) {
-      console.warn('API offline, saving to local store');
+      console.log('Backend assets not available, saved locally');
     }
 
-    const updated = [newAsset, ...assets];
-    setAssets(updated);
-    localStorage.setItem('mahsa_assets', JSON.stringify(updated));
+    setAssets(prev => [newAsset, ...prev]);
+    localStorage.setItem('mahsa_assets', JSON.stringify([newAsset, ...assets]));
+    toast.success(`Asset "${newAssetData.assetName}" created!`);
   };
 
   const handleUpdateAsset = async (updatedAsset: Asset) => {
     try {
-      if (updatedAsset._id && !updatedAsset._id.startsWith('ast-')) {
-        await fetch(`/api/assets/${updatedAsset._id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedAsset)
-        });
-      }
+      await fetch(`${API_BASE_URL}/api/assets/${updatedAsset._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedAsset)
+      });
     } catch (e) {
-      console.warn('API offline, updating local store');
+      console.log('Backend assets not available, saved locally');
     }
-
-    const updated = assets.map(a => 
-      (a._id === updatedAsset._id || a.assetNo === updatedAsset.assetNo) ? updatedAsset : a
-    );
-    setAssets(updated);
-    localStorage.setItem('mahsa_assets', JSON.stringify(updated));
+    const nextList = assets.map(a => a._id === updatedAsset._id ? updatedAsset : a);
+    setAssets(nextList);
+    localStorage.setItem('mahsa_assets', JSON.stringify(nextList));
+    toast.success(`Asset "${updatedAsset.assetName}" updated!`);
   };
 
   const handleDeleteAsset = async (id: string) => {
     try {
-      if (!id.startsWith('ast-')) {
-        await fetch(`/api/assets/${id}`, { method: 'DELETE' });
-      }
+      await fetch(`${API_BASE_URL}/api/assets/${id}`, { method: 'DELETE' });
     } catch (e) {
-      console.warn('API offline, deleting from local store');
+      console.log('Backend assets not available, deleted locally');
     }
-
-    const updated = assets.filter(a => a._id !== id);
-    setAssets(updated);
-    localStorage.setItem('mahsa_assets', JSON.stringify(updated));
+    const filtered = assets.filter(a => a._id !== id);
+    setAssets(filtered);
+    localStorage.setItem('mahsa_assets', JSON.stringify(filtered));
+    toast.success('Asset deleted successfully');
   };
 
-  const handleBulkUpload = async (uploadedAssets: Asset[], strategy: 'skip' | 'update') => {
+  const handleBulkUpload = async (uploadedAssets: Partial<Asset>[], strategy: 'skip' | 'update') => {
     try {
-      await fetch('/api/assets/bulk', {
+      const res = await fetch(`${API_BASE_URL}/api/assets/bulk-upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assets: uploadedAssets, duplicateStrategy: strategy })
       });
+      if (res.ok) {
+        const data = await res.json();
+        const assetsRes = await fetch(`${API_BASE_URL}/api/assets?limit=2000`);
+        if (assetsRes.ok) {
+          const fresh = await assetsRes.json();
+          setAssets(fresh);
+          localStorage.setItem('mahsa_assets', JSON.stringify(fresh));
+          toast.success(`Bulk upload complete! ${data.insertedCount || 0} added, ${data.updatedCount || 0} updated.`);
+          return;
+        }
+      }
     } catch (e) {
-      console.warn('API offline, processing bulk locally');
+      console.log('Backend assets not available, saving locally');
     }
 
-    // Deduplication processing (Zero duplicate clashes)
-    const existingMap = new Map<string, Asset>();
-    assets.forEach(a => existingMap.set(String(a.assetNo || '').trim().toUpperCase(), a));
-
     let resultList = [...assets];
-
     if (strategy === 'skip') {
-      const newItems: Asset[] = [];
+      const existingNoSet = new Set(assets.map(a => String(a.assetNo || '').trim().toUpperCase()));
+      const toAdd: Asset[] = [];
       uploadedAssets.forEach((item, idx) => {
         const normKey = String(item.assetNo || '').trim().toUpperCase();
-        if (!existingMap.has(normKey)) {
-          newItems.push({
+        if (!existingNoSet.has(normKey)) {
+          existingNoSet.add(normKey);
+          toAdd.push({
             ...item,
             _id: `ast-bulk-${Date.now()}-${idx}`,
-            no: resultList.length + newItems.length + 1,
-            createdAt: new Date().toISOString()
-          });
-          existingMap.set(normKey, item);
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          } as Asset);
         }
       });
-      resultList = [...resultList, ...newItems];
+      resultList = [...toAdd, ...resultList];
+      toast.success(`Bulk upload processed: ${toAdd.length} new assets added.`);
     } else {
-      // 'update' strategy
       const updatedMap = new Map<string, Asset>();
       assets.forEach(a => updatedMap.set(String(a.assetNo || '').trim().toUpperCase(), a));
 
@@ -2753,10 +3196,56 @@ export default function App() {
         });
       });
       resultList = Array.from(updatedMap.values());
+      toast.success(`Bulk upload processed: ${resultList.length} total assets.`);
     }
 
     setAssets(resultList);
     localStorage.setItem('mahsa_assets', JSON.stringify(resultList));
+  };
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [statsRes, requestsRes, ordersRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/stats`),
+        fetch(`${API_BASE_URL}/api/work-requests`),
+        fetch(`${API_BASE_URL}/api/work-orders`)
+      ]);
+      const statsData = await statsRes.json();
+      const requestsData = await requestsRes.json();
+      const ordersData = await ordersRes.json();
+      
+      console.log('📋 Requests data received:', Array.isArray(requestsData) ? requestsData.length : 'Error');
+
+      if (statsData && !statsData.error) {
+        setStats(statsData);
+      } else if (statsData.error) {
+        console.error('Stats API Error:', statsData);
+      }
+      
+      if (Array.isArray(requestsData)) {
+        setRequests(requestsData);
+      } else {
+        console.error('Requests Data is not an array:', requestsData);
+        setRequests([]);
+        if (requestsData.error) toast.error(`Failed to load requests: ${requestsData.details || requestsData.error}`);
+      }
+
+      if (Array.isArray(ordersData)) {
+        setOrders(ordersData);
+      } else {
+        console.error('Orders Data is not an array:', ordersData);
+        setOrders([]);
+        if (ordersData.error) toast.error(`Failed to load orders: ${ordersData.details || ordersData.error}`);
+      }
+    } catch (err) {
+      console.error('Failed to fetch data:', err);
+      toast.error('Connection error with the server');
+      setRequests([]);
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -2789,13 +3278,19 @@ export default function App() {
     return <LoginView onLogin={handleLogin} />;
   }
 
+  const handleSelectRequest = (id: string) => {
+    console.log(`🔍 Selecting request: ${id}`);
+    setSelectedRequestId(id);
+    setView('work-request-detail');
+  };
+
   const renderView = () => {
     switch (view) {
       case 'dashboard':
-        return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} user={user} assets={assets} />;
+        return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={handleSelectRequest} user={user} assets={assets} />;
       case 'assets':
         if (user?.role !== 'admin') {
-          return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} user={user} assets={assets} />;
+          return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={handleSelectRequest} user={user} assets={assets} />;
         }
         return (
           <AssetDashboardView 
@@ -2807,9 +3302,10 @@ export default function App() {
           />
         );
       case 'work-requests':
-        return <WorkRequestsView requests={requests} user={user} onRefresh={fetchData} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} />;
+        return <WorkRequestsView requests={requests} user={user} onRefresh={fetchData} onSelectRequest={handleSelectRequest} />;
       case 'work-request-detail':
-        const selectedReq = requests.find(r => r._id === selectedRequestId);
+        const selectedReq = requests.find(r => String(r._id) === String(selectedRequestId));
+        console.log(`📄 Detail view for:`, selectedReq?.wrId || 'Unknown');
         return <WorkRequestDetailView 
           request={selectedReq} 
           onBack={() => {
@@ -2823,23 +3319,26 @@ export default function App() {
           user={user} 
         />;
       case 'work-orders':
-        return <WorkOrdersView requests={requests} orders={orders} onRefresh={fetchData} user={user} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} />;
+        return <WorkOrdersView requests={requests} orders={orders} onRefresh={fetchData} user={user} onSelectRequest={handleSelectRequest} />;
       case 'reports':
         if (user?.role !== 'admin' && user?.role !== 'manager') {
-          return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} user={user} assets={assets} />;
+          return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={handleSelectRequest} user={user} />;
         }
         return <ReportsView stats={stats} requests={requests} orders={orders} user={user} />;
       case 'user-management':
         return <UserManagementView />;
+      case 'category-management':
+        return <CategoryManagementView user={user} onRefresh={fetchData} />;
       case 'settings':
         return <SettingsView user={user} />;
       default:
-        return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={(id) => { setSelectedRequestId(id); setView('work-request-detail'); }} user={user} assets={assets} />;
+        return <Dashboard stats={stats} requests={requests} orders={orders} onSelectRequest={handleSelectRequest} user={user} />;
     }
   };
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 overflow-x-hidden">
+      <Toaster position="top-right" richColors />
       <Sidebar 
         currentView={view} 
         setView={setView} 
