@@ -26,7 +26,7 @@ interface DepartmentAssetsSectionProps {
 
 export const DepartmentAssetsSection: React.FC<DepartmentAssetsSectionProps> = ({
   assets,
-  userDepartment = 'Cardiology',
+  userDepartment = '',
   userName
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,7 +36,7 @@ export const DepartmentAssetsSection: React.FC<DepartmentAssetsSectionProps> = (
   // Filter department assets
   const deptAssets = useMemo(() => {
     const deptNorm = (userDepartment || '').trim().toLowerCase();
-    if (!deptNorm) return assets.slice(0, 10);
+    if (!deptNorm) return [];
 
     return assets.filter(a => {
       const matchDept = a.department?.toLowerCase().includes(deptNorm);

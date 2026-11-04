@@ -166,29 +166,6 @@ interface WorkOrder {
   createdAt: string;
 }
 
-// --- Mock Data for Charts ---
-const categoryData = [
-  { name: 'Medical Equipment', value: 36 },
-  { name: 'HVAC', value: 28 },
-  { name: 'Electrical', value: 22 },
-  { name: 'Plumbing', value: 18 },
-  { name: 'IT Infrastructure', value: 25 },
-  { name: 'Cleaning', value: 15 },
-  { name: 'Security', value: 12 },
-];
-
-const slaData = [
-  { name: 'On Time', value: 142, color: '#22c55e' },
-  { name: 'Delayed', value: 14, color: '#f59e0b' },
-];
-
-const trendData = [
-  { name: 'Jan', total: 145, closed: 130, open: 15 },
-  { name: 'Feb', total: 158, closed: 141, open: 17 },
-  { name: 'Mar', total: 162, closed: 148, open: 14 },
-  { name: 'Apr', total: 156, closed: 113, open: 43 },
-];
-
 // --- Helpers ---
 const isAdminLike = (user: User | null) => user?.role === 'admin' || user?.role === 'manager' || user?.role === 'supervisor';
 
@@ -317,11 +294,7 @@ const Sidebar = ({ currentView, setView, user, onSignOut, isOpen, onClose }: { c
 };
 
 const Header = ({ title, user, onSignOut, setView, onMenuClick }: { title: string, user: User | null, onSignOut: () => void, setView: (v: View) => void, onMenuClick: () => void }) => {
-  const notifications = [
-    { id: 1, title: 'New Work Request', description: 'WR-2026-045 has been submitted.', time: '5m ago', unread: true },
-    { id: 2, title: 'Work Order Assigned', description: 'You have been assigned to WO-2026-012.', time: '1h ago', unread: false },
-    { id: 3, title: 'SLA Warning', description: 'WR-2026-038 is approaching SLA limit.', time: '2h ago', unread: true },
-  ];
+  const notifications: { id: number; title: string; description: string; time: string; unread: boolean }[] = [];
 
   return (
     <header className="h-16 border-b bg-white flex items-center justify-between px-4 lg:px-8 sticky top-0 z-30">
@@ -352,15 +325,21 @@ const Header = ({ title, user, onSignOut, setView, onMenuClick }: { title: strin
               </div>
               <DropdownMenuSeparator />
               <div className="max-h-[300px] overflow-y-auto">
-                {notifications.map(n => (
-                  <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 p-3 cursor-pointer">
-                    <div className="flex items-center justify-between w-full">
-                      <span className={`text-sm font-semibold ${n.unread ? 'text-blue-600' : ''}`}>{n.title}</span>
-                      <span className="text-[10px] text-muted-foreground">{n.time}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{n.description}</p>
-                  </DropdownMenuItem>
-                ))}
+                {notifications.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-muted-foreground">
+                    No new notifications
+                  </div>
+                ) : (
+                  notifications.map(n => (
+                    <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 p-3 cursor-pointer">
+                      <div className="flex items-center justify-between w-full">
+                        <span className={`text-sm font-semibold ${n.unread ? 'text-blue-600' : ''}`}>{n.title}</span>
+                        <span className="text-[10px] text-muted-foreground">{n.time}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{n.description}</p>
+                    </DropdownMenuItem>
+                  ))
+                )}
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="justify-center text-blue-600 text-xs font-medium cursor-pointer">
@@ -463,7 +442,7 @@ const TechnicianDashboard = ({ requests = [], orders = [], user, onSelectRequest
         />
         <StatCard 
           label="Performance" 
-          value="98%" 
+          value={myOrders.length > 0 ? `${Math.round((completedTasks.length / myOrders.length) * 100)}%` : "100%"} 
           icon={BarChart3} 
           colorClass="bg-blue-100 text-blue-600" 
         />
@@ -569,7 +548,6 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user, a
         <StatCard 
           label={user?.role === 'staff' ? "My Total Requests" : "Total Tickets"} 
           value={user?.role === 'staff' ? tableRequests.length : stats.total} 
-          trend={12} 
           icon={ClipboardList} 
           colorClass="bg-blue-100 text-blue-600" 
         />
@@ -1508,7 +1486,22 @@ const WorkRequestDetailView = ({ request: initialRequest, onBack, onRefresh, use
     }
   };
 
-  const slaRemaining = "-25h -57m remaining"; // Mocked for UI
+  const getSlaRemaining = () => {
+    if (!request) return 'N/A';
+    if (request.status === 'CLOSED') return 'Resolved';
+    const slaHours = request.priority === 'CRITICAL' ? 4 : request.priority === 'HIGH' ? 8 : request.priority === 'MEDIUM' ? 24 : 48;
+    const createdTime = new Date(request.createdAt).getTime();
+    const targetTime = createdTime + slaHours * 3600 * 1000;
+    const diffMs = targetTime - Date.now();
+    if (diffMs < 0) {
+      const overdueHours = Math.abs(Math.round(diffMs / (3600 * 1000)));
+      return `${overdueHours}h Overdue`;
+    }
+    const remainingHours = Math.floor(diffMs / (3600 * 1000));
+    const remainingMins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000));
+    return `${remainingHours}h ${remainingMins}m remaining`;
+  };
+  const slaRemaining = getSlaRemaining();
 
   return (
     <div className="p-4 lg:p-8 space-y-6">
@@ -3312,12 +3305,7 @@ const LoginView = ({ onLogin }: { onLogin: (user: User) => void }) => {
             <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
-            <div className="text-center text-xs text-muted-foreground">
-              <p>Demo accounts:</p>
-              <p>Admin: admin / password123</p>
-              <p>Manager: manager / password123</p>
-              <p>Tech: mike / password123</p>
-            </div>
+
           </form>
         </CardContent>
       </Card>
@@ -3341,12 +3329,22 @@ export default function App() {
       const saved = localStorage.getItem('mahsa_assets');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // Remove any dummy sample assets that may have been saved earlier
+          const clean = parsed.filter((a: any) => 
+            !['AST-MED-001', 'AST-MED-002', 'AST-MED-003', 'AST-FAC-001', 'AST-ELE-001', 'AST-MED-004'].includes(a.assetNo) &&
+            !String(a._id || '').startsWith('ast-med-00')
+          );
+          if (clean.length !== parsed.length) {
+            localStorage.setItem('mahsa_assets', JSON.stringify(clean));
+          }
+          return clean;
+        }
       }
     } catch (e) {
       console.error('Failed to parse cached assets', e);
     }
-    return DEFAULT_HOSPITAL_ASSETS;
+    return [];
   });
 
   const handleAddAsset = async (newAssetData: Partial<Asset>) => {
