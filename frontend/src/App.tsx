@@ -34,7 +34,9 @@ import {
   Video,
   Download,
   Eye,
-  Boxes
+  Boxes,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { AssetDashboardView } from '@/components/assets/AssetDashboardView';
 import { DepartmentAssetsSection } from '@/components/assets/DepartmentAssetsSection';
@@ -740,6 +742,8 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [priorityFilter, setPriorityFilter] = useState('ALL');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'createdAt', direction: 'desc' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [newRequest, setNewRequest] = useState({
@@ -792,6 +796,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
       direction = 'desc';
     }
     setSortConfig({ key, direction });
+    setCurrentPage(1);
   };
 
   const filteredRequests = displayRequests.filter(req => {
@@ -824,6 +829,9 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
     if (aValue > bValue) return direction === 'asc' ? 1 : -1;
     return 0;
   });
+
+  const totalPages = Math.max(1, Math.ceil(sortedRequests.length / pageSize));
+  const paginatedRequests = sortedRequests.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -918,7 +926,32 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
   return (
     <div className="p-4 lg:p-8 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <p className="text-sm text-muted-foreground order-2 sm:order-1">Showing {sortedRequests.length} of {displayRequests.length} requests</p>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 order-2 sm:order-1">
+          <p className="text-sm text-muted-foreground">
+            Showing <span className="font-semibold text-gray-900">{sortedRequests.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, sortedRequests.length)}</span> of <span className="font-semibold text-gray-900">{sortedRequests.length}</span> requests
+            {sortedRequests.length !== displayRequests.length && ` (filtered from ${displayRequests.length})`}
+          </p>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Rows:</span>
+            <Select 
+              value={String(pageSize)} 
+              onValueChange={(val) => {
+                setPageSize(Number(val));
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="h-8 w-[100px] text-xs bg-white">
+                <SelectValue placeholder="10" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / page</SelectItem>
+                <SelectItem value="25">25 / page</SelectItem>
+                <SelectItem value="50">50 / page</SelectItem>
+                <SelectItem value="100">100 / page</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
           <DialogTrigger asChild>
@@ -1123,11 +1156,11 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                 className="pl-10 bg-white" 
                 placeholder="Search by ID, name, location, or description..." 
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
               />
             </div>
             <div className="flex items-center gap-2 w-full md:w-auto">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val); setCurrentPage(1); }}>
                 <SelectTrigger className="w-full md:w-[150px] bg-white">
                   <div className="flex items-center gap-2">
                     <Filter size={14} className="text-gray-400" />
@@ -1143,7 +1176,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
                   <SelectItem value="CLOSED">Closed</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <Select value={priorityFilter} onValueChange={(val) => { setPriorityFilter(val); setCurrentPage(1); }}>
                 <SelectTrigger className="w-full md:w-[150px] bg-white">
                   <div className="flex items-center gap-2">
                     <AlertCircle size={14} className="text-gray-400" />
@@ -1176,7 +1209,7 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedRequests.map((req) => (
+              {paginatedRequests.map((req) => (
                 <TableRow key={req._id} className="hover:bg-gray-50/50">
                   <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(String(req._id))}>{req.wrId}</TableCell>
                   <TableCell>
@@ -1232,6 +1265,81 @@ const WorkRequestsView = ({ requests = [], user, onRefresh, onSelectRequest }: {
             </TableBody>
           </Table>
         </CardContent>
+
+        {/* Pagination Bar */}
+        {sortedRequests.length > 0 && (
+          <div className="p-3 bg-gray-50/70 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-600">
+            <div className="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <Select 
+                value={String(pageSize)} 
+                onValueChange={(val) => {
+                  setPageSize(Number(val));
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="h-7 w-[95px] text-xs bg-white">
+                  <SelectValue placeholder="10" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 / page</SelectItem>
+                  <SelectItem value="25">25 / page</SelectItem>
+                  <SelectItem value="50">50 / page</SelectItem>
+                  <SelectItem value="100">100 / page</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground ml-2">
+                Page <span className="font-bold text-gray-900">{currentPage}</span> of{' '}
+                <span className="font-bold text-gray-900">{totalPages}</span> ({sortedRequests.length} total)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              >
+                <ChevronLeft size={14} className="mr-0.5" /> Previous
+              </Button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let p = i + 1;
+                  if (totalPages > 5 && currentPage > 3) {
+                    p = currentPage - 2 + i;
+                    if (p > totalPages) p = totalPages - (4 - i);
+                  }
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p)}
+                      className={`h-7 w-7 rounded-md font-medium text-xs transition-colors ${
+                        currentPage === p
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              >
+                Next <ChevronRight size={14} className="ml-0.5" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -1867,6 +1975,10 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'createdAt', direction: 'desc' });
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersPageSize, setOrdersPageSize] = useState(10);
+  const [unassignedPage, setUnassignedPage] = useState(1);
+  const [unassignedPageSize, setUnassignedPageSize] = useState(10);
 
   const fetchTechs = async () => {
     const res = await fetch(`${API_BASE_URL}/api/users`);
@@ -1937,6 +2049,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
       direction = 'desc';
     }
     setSortConfig({ key, direction });
+    setOrdersPage(1);
   };
 
   const myOrders = user?.role === 'technician' 
@@ -1972,6 +2085,12 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
     return 0;
   });
 
+  const totalOrdersPages = Math.max(1, Math.ceil(sortedOrders.length / ordersPageSize));
+  const paginatedOrders = sortedOrders.slice((ordersPage - 1) * ordersPageSize, ordersPage * ordersPageSize);
+
+  const totalUnassignedPages = Math.max(1, Math.ceil(unassignedRequests.length / unassignedPageSize));
+  const paginatedUnassigned = unassignedRequests.slice((unassignedPage - 1) * unassignedPageSize, unassignedPage * unassignedPageSize);
+
   return (
     <div className="p-4 lg:p-8 space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
@@ -1983,9 +2102,32 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
 
       {(isAdminLike(user) || user?.role === 'technician') && (
         <>
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-bold">Unassigned Requests</h3>
-            <p className="text-sm text-muted-foreground">{unassignedRequests.length} pending assignment</p>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <h3 className="text-lg font-bold">Unassigned Requests</h3>
+              <p className="text-xs text-muted-foreground">{unassignedRequests.length} pending assignment</p>
+            </div>
+            {unassignedRequests.length > 5 && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Rows:</span>
+                <Select 
+                  value={String(unassignedPageSize)} 
+                  onValueChange={(val) => {
+                    setUnassignedPageSize(Number(val));
+                    setUnassignedPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-7 w-[90px] text-xs bg-white">
+                    <SelectValue placeholder="10" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 / page</SelectItem>
+                    <SelectItem value="10">10 / page</SelectItem>
+                    <SelectItem value="25">25 / page</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <Card>
@@ -2001,7 +2143,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {unassignedRequests.map(wr => (
+                  {paginatedUnassigned.map(wr => (
                     <TableRow key={wr._id} className="hover:bg-gray-50/50">
                       <TableCell className="font-medium text-blue-600 cursor-pointer hover:underline" onClick={() => onSelectRequest(String(wr._id))}>{wr.wrId}</TableCell>
                       <TableCell>{wr.category}</TableCell>
@@ -2031,6 +2173,31 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                 </TableBody>
               </Table>
             </CardContent>
+            {unassignedRequests.length > unassignedPageSize && (
+              <div className="p-2.5 bg-gray-50/70 border-t flex items-center justify-between text-xs text-gray-600">
+                <span>Page {unassignedPage} of {totalUnassignedPages} ({unassignedRequests.length} total)</span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    disabled={unassignedPage <= 1}
+                    onClick={() => setUnassignedPage(prev => Math.max(prev - 1, 1))}
+                  >
+                    Prev
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    disabled={unassignedPage >= totalUnassignedPages}
+                    onClick={() => setUnassignedPage(prev => Math.min(prev + 1, totalUnassignedPages))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </>
       )}
@@ -2061,7 +2228,12 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
 
       <Card>
         <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <CardTitle className="text-base font-semibold">Active Work Orders</CardTitle>
+          <div>
+            <CardTitle className="text-base font-semibold">Active Work Orders</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Showing {sortedOrders.length === 0 ? 0 : (ordersPage - 1) * ordersPageSize + 1} - {Math.min(ordersPage * ordersPageSize, sortedOrders.length)} of {sortedOrders.length} orders
+            </p>
+          </div>
           <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
             <div className="relative w-full md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -2069,11 +2241,11 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                 className="pl-9 h-9" 
                 placeholder="Search orders..." 
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setOrdersPage(1); }}
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-full md:w-[140px]">
+            <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val); setOrdersPage(1); }}>
+              <SelectTrigger className="h-9 w-full md:w-[130px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -2083,6 +2255,26 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
                 <SelectItem value="COMPLETED">Completed</SelectItem>
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>Rows:</span>
+              <Select 
+                value={String(ordersPageSize)} 
+                onValueChange={(val) => {
+                  setOrdersPageSize(Number(val));
+                  setOrdersPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[100px] text-xs bg-white">
+                  <SelectValue placeholder="10" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 / page</SelectItem>
+                  <SelectItem value="25">25 / page</SelectItem>
+                  <SelectItem value="50">50 / page</SelectItem>
+                  <SelectItem value="100">100 / page</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -2098,7 +2290,7 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedOrders.map((wo) => {
+              {paginatedOrders.map((wo) => {
                 const linkedRequest = requests.find(r => String(r.wrId) === String(wo.wrId));
                 return (
                   <TableRow key={wo._id}>
@@ -2166,6 +2358,81 @@ const WorkOrdersView = ({ requests = [], orders = [], onRefresh, user, onSelectR
             </TableBody>
           </Table>
         </CardContent>
+
+        {/* Pagination Bar for Work Orders */}
+        {sortedOrders.length > 0 && (
+          <div className="p-3 bg-gray-50/70 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-600">
+            <div className="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <Select 
+                value={String(ordersPageSize)} 
+                onValueChange={(val) => {
+                  setOrdersPageSize(Number(val));
+                  setOrdersPage(1);
+                }}
+              >
+                <SelectTrigger className="h-7 w-[95px] text-xs bg-white">
+                  <SelectValue placeholder="10" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 / page</SelectItem>
+                  <SelectItem value="25">25 / page</SelectItem>
+                  <SelectItem value="50">50 / page</SelectItem>
+                  <SelectItem value="100">100 / page</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground ml-2">
+                Page <span className="font-bold text-gray-900">{ordersPage}</span> of{' '}
+                <span className="font-bold text-gray-900">{totalOrdersPages}</span> ({sortedOrders.length} total)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2"
+                disabled={ordersPage <= 1}
+                onClick={() => setOrdersPage(prev => Math.max(prev - 1, 1))}
+              >
+                <ChevronLeft size={14} className="mr-0.5" /> Previous
+              </Button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalOrdersPages) }, (_, i) => {
+                  let p = i + 1;
+                  if (totalOrdersPages > 5 && ordersPage > 3) {
+                    p = ordersPage - 2 + i;
+                    if (p > totalOrdersPages) p = totalOrdersPages - (4 - i);
+                  }
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setOrdersPage(p)}
+                      className={`h-7 w-7 rounded-md font-medium text-xs transition-colors ${
+                        ordersPage === p
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2"
+                disabled={ordersPage >= totalOrdersPages}
+                onClick={() => setOrdersPage(prev => Math.min(prev + 1, totalOrdersPages))}
+              >
+                Next <ChevronRight size={14} className="ml-0.5" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
