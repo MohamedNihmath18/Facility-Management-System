@@ -22,7 +22,7 @@ interface BulkUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   existingAssets: Asset[];
-  onSuccess: (newAssets: Asset[], strategy: 'skip' | 'update') => Promise<void>;
+  onSuccess: (newAssets: Asset[], strategy: 'skip' | 'update' | 'replace') => Promise<void>;
 }
 
 interface ParsedSummary {
@@ -42,7 +42,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
 }) => {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [duplicateStrategy, setDuplicateStrategy] = useState<'skip' | 'update'>('skip');
+  const [duplicateStrategy, setDuplicateStrategy] = useState<'skip' | 'update' | 'replace'>('update');
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [summary, setSummary] = useState<ParsedSummary | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -85,19 +85,19 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
         return;
       }
 
-      // Existing assets lookup sets (by Serial Number and Asset No)
+      // Existing assets lookup sets (by Serial Number and exact AssetNo + Name)
       const existingSerialSet = new Set(
         existingAssets
-          .filter(a => a.serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN'].includes(String(a.serialNumber).trim().toUpperCase()))
+          .filter(a => a.serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(String(a.serialNumber).trim().toUpperCase()))
           .map(a => String(a.serialNumber).trim().toUpperCase())
       );
-      const existingNoSet = new Set(
+      const existingExactSet = new Set(
         existingAssets
-          .filter(a => a.assetNo)
-          .map(a => String(a.assetNo).trim().toUpperCase())
+          .map(a => `${String(a.assetNo || '').trim().toUpperCase()}|||${String(a.assetName || '').trim().toUpperCase()}`)
       );
 
-      const seenInFile = new Set<string>();
+      const seenSerialsInFile = new Set<string>();
+      const seenExactInFile = new Set<string>();
       const duplicatesInFile: string[] = [];
       const duplicateWithSystem: string[] = [];
       const cleanedRows: any[] = [];
@@ -124,14 +124,16 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           'Serial Number', 'serialNumber', 'Serial No.', 'Serial No', 'Serial', 'S/N', 'SN', 'serial_number', 'Serial #'
         );
         const rawAssetName = getVal(
-          'Asset Name', 'assetName', 'Equipment Name', 'Item Name', 'Description', 'Asset Description', 'Name'
+          'Asset Description', 'Asset Name', 'assetName', 'Equipment Name', 'Item Name', 'Description', 'Asset Description', 'Name'
         );
 
         const serialNumber = String(rawSerial || '').trim();
-        const hasValidSerial = serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN'].includes(serialNumber.toUpperCase());
+        const hasValidSerial = Boolean(
+          serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(serialNumber.toUpperCase())
+        );
 
         let assetNo = String(rawAssetNo || '').trim();
-        // If assetNo is missing or empty, DO NOT skip row! Auto-generate asset identifier from serial number or index
+        // If assetNo is missing or empty, auto-generate valid asset identifier from serial number or index
         if (!assetNo) {
           if (hasValidSerial) {
             assetNo = `AST-${serialNumber}`;
@@ -142,21 +144,31 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
 
         const assetName = String(rawAssetName || `Asset ${index + 1}`).trim();
 
-        // Check for duplicates inside the file based primarily on unique Serial Number (or Asset No if no serial)
-        const dedupeKey = hasValidSerial 
-          ? `SN:${serialNumber.toUpperCase()}` 
-          : `NO:${assetNo.toUpperCase()}`;
-
-        if (seenInFile.has(dedupeKey)) {
-          duplicatesInFile.push(hasValidSerial ? `SN: ${serialNumber}` : `No: ${assetNo}`);
-          return;
+        // Check for duplicates inside the file:
+        // Only consider a row duplicate if it shares the exact same non-empty Serial Number
+        // or if both Asset No AND Asset Name are identical
+        if (hasValidSerial) {
+          const normSerial = serialNumber.toUpperCase();
+          if (seenSerialsInFile.has(normSerial)) {
+            duplicatesInFile.push(`SN: ${serialNumber}`);
+            return;
+          }
+          seenSerialsInFile.add(normSerial);
+        } else {
+          const exactKey = `${assetNo.toUpperCase()}|||${assetName.toUpperCase()}`;
+          if (seenExactInFile.has(exactKey)) {
+            duplicatesInFile.push(`Asset: ${assetNo} (${assetName})`);
+            return;
+          }
+          seenExactInFile.add(exactKey);
         }
-        seenInFile.add(dedupeKey);
 
-        const isDuplicateWithSystem = (hasValidSerial && existingSerialSet.has(serialNumber.toUpperCase())) ||
-                                      (assetNo && existingNoSet.has(assetNo.toUpperCase()));
+        const isDuplicateWithSystem = hasValidSerial
+          ? existingSerialSet.has(serialNumber.toUpperCase())
+          : existingExactSet.has(`${assetNo.toUpperCase()}|||${assetName.toUpperCase()}`);
+
         if (isDuplicateWithSystem) {
-          duplicateWithSystem.push(hasValidSerial ? `SN: ${serialNumber}` : `No: ${assetNo}`);
+          duplicateWithSystem.push(hasValidSerial ? `SN: ${serialNumber}` : `${assetNo} (${assetName})`);
         }
 
         const formatDateVal = (val: any) => {
@@ -395,38 +407,12 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <label
-                      onClick={() => setDuplicateStrategy('skip')}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                        duplicateStrategy === 'skip'
-                          ? 'border-blue-600 bg-blue-50/50 text-blue-900 shadow-xs'
-                          : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="duplicateStrategy"
-                        value="skip"
-                        checked={duplicateStrategy === 'skip'}
-                        onChange={() => setDuplicateStrategy('skip')}
-                        className="mt-1"
-                      />
-                      <div>
-                        <p className="text-sm font-semibold flex items-center gap-1.5">
-                          Skip Duplicates <Badge className="bg-emerald-600 text-[10px] h-4">Recommended</Badge>
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Keep existing assets intact. Insert only the {summary.validNewCount} new assets. Safe for recurring uploads!
-                        </p>
-                      </div>
-                    </label>
-
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                     <label
                       onClick={() => setDuplicateStrategy('update')}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
                         duplicateStrategy === 'update'
-                          ? 'border-blue-600 bg-blue-50/50 text-blue-900 shadow-xs'
+                          ? 'border-blue-600 bg-blue-50/60 text-blue-900 shadow-xs ring-1 ring-blue-500'
                           : 'border-gray-200 hover:bg-gray-50 text-gray-700'
                       }`}
                     >
@@ -436,12 +422,62 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                         value="update"
                         checked={duplicateStrategy === 'update'}
                         onChange={() => setDuplicateStrategy('update')}
-                        className="mt-1"
+                        className="mt-0.5"
                       />
                       <div>
-                        <p className="text-sm font-semibold">Update / Overwrite</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Update existing records with new data from this spreadsheet and add new assets.
+                        <p className="text-xs font-bold flex items-center gap-1">
+                          Update & Add Missing <Badge className="bg-blue-600 text-[9px] h-3.5 px-1">Recommended</Badge>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
+                          Syncs matching equipment records and imports all missing sub-components & accessories.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label
+                      onClick={() => setDuplicateStrategy('skip')}
+                      className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                        duplicateStrategy === 'skip'
+                          ? 'border-blue-600 bg-blue-50/60 text-blue-900 shadow-xs ring-1 ring-blue-500'
+                          : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="duplicateStrategy"
+                        value="skip"
+                        checked={duplicateStrategy === 'skip'}
+                        onChange={() => setDuplicateStrategy('skip')}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <p className="text-xs font-bold">Skip Existing</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
+                          Keeps existing assets intact and only inserts newly detected assets.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label
+                      onClick={() => setDuplicateStrategy('replace')}
+                      className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                        duplicateStrategy === 'replace'
+                          ? 'border-amber-600 bg-amber-50/60 text-amber-900 shadow-xs ring-1 ring-amber-500'
+                          : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="duplicateStrategy"
+                        value="replace"
+                        checked={duplicateStrategy === 'replace'}
+                        onChange={() => setDuplicateStrategy('replace')}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <p className="text-xs font-bold text-amber-900">Replace Entire Register</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
+                          Clears existing assets and imports all {summary.totalRows} assets cleanly from this spreadsheet.
                         </p>
                       </div>
                     </label>

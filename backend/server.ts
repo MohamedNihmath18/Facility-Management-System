@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import facilityRoutes from './routes/FacilityRoutes.ts';
-import { User, WorkRequest, Category } from './models/FacilityModels.ts';
+import { User, WorkRequest, Category, Asset } from './models/FacilityModels.ts';
 
 dotenv.config();
 
@@ -55,6 +55,12 @@ async function startServer() {
       .then(() => {
         console.log('✅ Connected to MongoDB successfully');
         isDbConnected = true;
+        // Drop legacy unique index on assetNo to support hospital equipment with shared system tags
+        Asset.collection.dropIndex('assetNo_1').then(() => {
+          console.log('✅ Dropped legacy unique index assetNo_1');
+        }).catch(() => {
+          // Index already dropped or not present
+        });
         seedData().catch(err => console.error('❌ Seeding error:', err));
       })
       .catch(err => {

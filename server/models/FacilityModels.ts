@@ -77,7 +77,7 @@ const AssetDocumentSchema = new mongoose.Schema({
 const AssetSchema = new mongoose.Schema({
   no: Number,
   assetName: { type: String, required: true },
-  assetNo: { type: String, required: true, unique: true, index: true },
+  assetNo: { type: String, required: true, index: true },
   serialNumber: { type: String, default: '' },
   model: { type: String, default: '' },
   manufacturerName: { type: String, default: '' },

@@ -56,7 +56,7 @@ interface AssetDashboardViewProps {
   onAddAsset: (newAsset: Partial<Asset>) => Promise<void>;
   onUpdateAsset: (updatedAsset: Asset) => Promise<void>;
   onDeleteAsset: (id: string) => Promise<void>;
-  onBulkUpload: (uploadedAssets: Asset[], strategy: 'skip' | 'update') => Promise<void>;
+  onBulkUpload: (uploadedAssets: Asset[], strategy: 'skip' | 'update' | 'replace') => Promise<void>;
 }
 
 export const AssetDashboardView: React.FC<AssetDashboardViewProps> = ({

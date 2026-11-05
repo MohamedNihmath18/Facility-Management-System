@@ -3413,7 +3413,7 @@ export default function App() {
     toast.success('Asset deleted successfully');
   };
 
-  const handleBulkUpload = async (uploadedAssets: Partial<Asset>[], strategy: 'skip' | 'update') => {
+  const handleBulkUpload = async (uploadedAssets: Partial<Asset>[], strategy: 'skip' | 'update' | 'replace') => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/assets/bulk-upload`, {
         method: 'POST',
@@ -3430,7 +3430,7 @@ export default function App() {
             : (Array.isArray(fresh?.assets) ? fresh.assets : []);
           setAssets(list);
           localStorage.setItem('mahsa_assets', JSON.stringify(list));
-          toast.success(`Bulk upload complete! ${data.insertedCount || 0} inserted, ${data.updatedCount || 0} updated (${list.length} total assets).`);
+          toast.success(`Bulk upload complete! ${list.length} assets registered in system.`);
           return;
         }
       }
@@ -3440,22 +3440,40 @@ export default function App() {
 
     const currentAssets = Array.isArray(assets) ? assets : [];
     let resultList = [...currentAssets];
-    if (strategy === 'skip') {
-      const existingNoSet = new Set(currentAssets.map(a => String(a.assetNo || '').trim().toUpperCase()));
+
+    if (strategy === 'replace') {
+      const toAdd: Asset[] = uploadedAssets.map((item, idx) => ({
+        ...item,
+        _id: `ast-bulk-${Date.now()}-${idx}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      } as Asset));
+      resultList = toAdd;
+      toast.success(`All assets replaced: ${toAdd.length} assets loaded.`);
+    } else if (strategy === 'skip') {
       const existingSerialSet = new Set(
         currentAssets
-          .filter(a => a.serialNumber && a.serialNumber.trim() && !['N/A', 'NA', '-', 'NONE'].includes(a.serialNumber.trim().toUpperCase()))
-          .map(a => a.serialNumber!.trim().toUpperCase())
+          .filter(a => a.serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(String(a.serialNumber).trim().toUpperCase()))
+          .map(a => String(a.serialNumber).trim().toUpperCase())
+      );
+      const existingExactSet = new Set(
+        currentAssets.map(a => `${String(a.assetNo || '').trim().toUpperCase()}|||${String(a.assetName || '').trim().toUpperCase()}`)
       );
       const toAdd: Asset[] = [];
       uploadedAssets.forEach((item, idx) => {
-        const normKey = String(item.assetNo || '').trim().toUpperCase();
         const normSerial = String(item.serialNumber || '').trim().toUpperCase();
-        const isDup = (normSerial && !['N/A', 'NA', '-', 'NONE'].includes(normSerial) && existingSerialSet.has(normSerial)) ||
-                      (normKey && existingNoSet.has(normKey));
+        const hasValidSerial = Boolean(
+          normSerial && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(normSerial)
+        );
+        const normKey = `${String(item.assetNo || '').trim().toUpperCase()}|||${String(item.assetName || '').trim().toUpperCase()}`;
+
+        const isDup = hasValidSerial 
+          ? existingSerialSet.has(normSerial)
+          : existingExactSet.has(normKey);
+
         if (!isDup) {
-          if (normKey) existingNoSet.add(normKey);
-          if (normSerial) existingSerialSet.add(normSerial);
+          if (hasValidSerial) existingSerialSet.add(normSerial);
+          existingExactSet.add(normKey);
           toAdd.push({
             ...item,
             _id: `ast-bulk-${Date.now()}-${idx}`,
@@ -3469,18 +3487,24 @@ export default function App() {
     } else {
       const updatedMap = new Map<string, Asset>();
       currentAssets.forEach(a => {
-        const key = a.serialNumber && !['N/A', 'NA', '-', 'NONE'].includes(a.serialNumber.trim().toUpperCase())
-          ? `SN:${a.serialNumber.trim().toUpperCase()}`
-          : `NO:${String(a.assetNo || '').trim().toUpperCase()}`;
+        const hasValidSerial = Boolean(
+          a.serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(String(a.serialNumber).trim().toUpperCase())
+        );
+        const key = hasValidSerial
+          ? `SN:${String(a.serialNumber).trim().toUpperCase()}`
+          : `EXACT:${String(a.assetNo || '').trim().toUpperCase()}|||${String(a.assetName || '').trim().toUpperCase()}`;
         updatedMap.set(key, a);
       });
 
       uploadedAssets.forEach((item, idx) => {
         const normSerial = String(item.serialNumber || '').trim().toUpperCase();
-        const normNo = String(item.assetNo || '').trim().toUpperCase();
-        const key = normSerial && !['N/A', 'NA', '-', 'NONE'].includes(normSerial)
+        const hasValidSerial = Boolean(
+          normSerial && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(normSerial)
+        );
+        const key = hasValidSerial
           ? `SN:${normSerial}`
-          : `NO:${normNo}`;
+          : `EXACT:${String(item.assetNo || '').trim().toUpperCase()}|||${String(item.assetName || '').trim().toUpperCase()}`;
+
         const existing = updatedMap.get(key);
         updatedMap.set(key, {
           ...existing,
