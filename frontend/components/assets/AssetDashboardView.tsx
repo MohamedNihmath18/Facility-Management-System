@@ -20,7 +20,11 @@ import {
   AlertCircle, 
   RotateCcw,
   Sparkles,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Building2,
+  DollarSign,
+  TrendingUp,
+  ArrowRight
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -75,10 +79,107 @@ export const AssetDashboardView: React.FC<AssetDashboardViewProps> = ({
   const [selectedCriticality, setSelectedCriticality] = useState<string>('All');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [selectedAlertFilter, setSelectedAlertFilter] = useState<'all' | 'warranty' | 'ppm' | 'license'>('all');
+  const [selectedValuationDept, setSelectedValuationDept] = useState<string>('ALL');
 
   // Pagination states (vital for 1000+ assets)
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
+
+  // Available Hospital Departments
+  const availableDepartments = useMemo(() => {
+    const deptSet = new Set<string>();
+    
+    // Core hospital departments
+    const defaultDepts = [
+      'Biomedical Engineering',
+      'Cardiology',
+      'CSSD',
+      'Customer Care',
+      'Dental Clinic',
+      'Emergency Department (ED)',
+      'Facilities & Maintenance',
+      'FOA (Front Office / Administration)',
+      'Human Resources (HR)',
+      'Information Technology (IT)',
+      'Intensive Care Unit (ICU)',
+      'Medical Gas',
+      'Operation Theatre (OT)',
+      'O&G / Nursery',
+      'Oncology',
+      'Outpatient Department (OPD)',
+      'Pathology & Laboratory',
+      'Pediatrics',
+      'Pharmacy',
+      'Physiotherapy & Rehab',
+      'Radiology & Imaging',
+      'Ward 2A',
+      'Ward 2B'
+    ];
+    defaultDepts.forEach(d => deptSet.add(d));
+
+    // Also include any custom department registered in assets
+    assets.forEach(a => {
+      if (a.department && a.department.trim()) {
+        deptSet.add(a.department.trim());
+      }
+    });
+
+    return Array.from(deptSet).sort((a, b) => a.localeCompare(b));
+  }, [assets]);
+
+  // Calculate Department Asset Valuation & Metrics
+  const deptValuationStats = useMemo(() => {
+    let matchedAssets = assets;
+    let deptLabel = 'Hospital Wide (All Departments)';
+
+    if (selectedValuationDept !== 'ALL') {
+      deptLabel = selectedValuationDept;
+      const term = selectedValuationDept.toLowerCase().trim();
+      const cleanTokens = term.replace(/[()]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+
+      matchedAssets = assets.filter(a => {
+        const d = (a.department || '').toLowerCase().trim();
+        const l = (a.location || '').toLowerCase().trim();
+        if (!d && !l) return false;
+        if (d === term || l === term) return true;
+        if (d.includes(term) || term.includes(d)) return true;
+        if (l.includes(term) || term.includes(l)) return true;
+        return cleanTokens.some(token => d.includes(token) || l.includes(token));
+      });
+    }
+
+    const totalAmount = matchedAssets.reduce((sum, a) => sum + (Number(a.totalAmount) || 0), 0);
+    const assetCount = matchedAssets.length;
+    const activeCount = matchedAssets.filter(a => a.status === 'Active').length;
+    const maintenanceCount = matchedAssets.filter(a => a.status === 'Under Maintenance' || a.status === 'In Repair').length;
+    const avgAmount = assetCount > 0 ? totalAmount / assetCount : 0;
+
+    let highestAsset: Asset | null = null;
+    matchedAssets.forEach(a => {
+      const amt = Number(a.totalAmount) || 0;
+      if (amt > 0) {
+        if (!highestAsset || amt > (Number(highestAsset.totalAmount) || 0)) {
+          highestAsset = a;
+        }
+      }
+    });
+
+    const hospitalTotalAmount = assets.reduce((sum, a) => sum + (Number(a.totalAmount) || 0), 0);
+    const capitalShare = hospitalTotalAmount > 0 
+      ? Math.round((totalAmount / hospitalTotalAmount) * 100) 
+      : (selectedValuationDept === 'ALL' ? 100 : 0);
+
+    return {
+      deptLabel,
+      totalAmount,
+      assetCount,
+      activeCount,
+      maintenanceCount,
+      avgAmount,
+      highestAsset,
+      capitalShare
+    };
+  }, [assets, selectedValuationDept]);
 
   // Calculate Metrics & 30-day Alerts
   const { stats, alertAssets } = useMemo(() => {
@@ -144,7 +245,8 @@ export const AssetDashboardView: React.FC<AssetDashboardViewProps> = ({
           a.model?.toLowerCase().includes(term) ||
           a.manufacturerName?.toLowerCase().includes(term) ||
           a.supplierName?.toLowerCase().includes(term) ||
-          a.location?.toLowerCase().includes(term);
+          a.location?.toLowerCase().includes(term) ||
+          a.department?.toLowerCase().includes(term);
         if (!matches) return false;
       }
 
@@ -188,6 +290,7 @@ export const AssetDashboardView: React.FC<AssetDashboardViewProps> = ({
     setSelectedCriticality('All');
     setSelectedStatus('All');
     setSelectedAlertFilter('all');
+    setSelectedValuationDept('ALL');
     setCurrentPage(1);
   };
 
@@ -370,6 +473,162 @@ export const AssetDashboardView: React.FC<AssetDashboardViewProps> = ({
           </CardContent>
         </Card>
       </div>
+
+      {/* Prominent Big Card: Department Asset Valuation & Capital Expenditure */}
+      <Card className="border-2 border-blue-200/90 bg-white shadow-xs overflow-hidden">
+        {/* Header Bar with Department Dropdown */}
+        <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-white px-5 py-4 border-b border-blue-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs">
+              <Building2 size={22} className="stroke-[2.2]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-gray-900">
+                  Department Asset Valuation
+                </h3>
+                <Badge variant="outline" className="bg-blue-100/80 text-blue-800 border-blue-200 text-[10px] font-semibold px-2 py-0.5">
+                  Financial Analytics
+                </Badge>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Select any hospital department below to view its cumulative asset valuation and equipment metrics
+              </p>
+            </div>
+          </div>
+
+          {/* Department Dropdown Selector */}
+          <div className="flex items-center gap-2 w-full md:w-80 shrink-0">
+            <div className="w-full">
+              <label className="block text-[11px] font-semibold text-gray-700 mb-1 flex items-center gap-1">
+                <Filter size={12} className="text-blue-600" />
+                Select Department:
+              </label>
+              <Select
+                value={selectedValuationDept}
+                onValueChange={(val) => setSelectedValuationDept(val)}
+              >
+                <SelectTrigger className="w-full h-9 bg-white border-blue-200 text-xs font-semibold shadow-xs focus:ring-2 focus:ring-blue-500">
+                  <SelectValue placeholder="Choose Department" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="ALL" className="text-xs font-bold text-blue-700">
+                    🏢 All Departments (Hospital Wide)
+                  </SelectItem>
+                  {availableDepartments.map((dept) => (
+                    <SelectItem key={dept} value={dept} className="text-xs font-medium">
+                      {dept}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Content Body of the Big Card */}
+        <CardContent className="p-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 1. Total Department Amount */}
+            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50/80 to-indigo-50/40 border border-blue-200/90 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-blue-900">Total Asset Valuation</p>
+                <span className="p-1.5 bg-blue-600 text-white rounded-lg shadow-xs">
+                  <DollarSign size={15} />
+                </span>
+              </div>
+              <h2 className="text-2xl font-extrabold text-blue-700 mt-2 truncate" title={formatCurrency(deptValuationStats.totalAmount)}>
+                {formatCurrency(deptValuationStats.totalAmount)}
+              </h2>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-[11px] font-medium text-blue-800 bg-blue-100/90 px-2 py-0.5 rounded-full">
+                  {deptValuationStats.capitalShare}% of Total Hospital Assets
+                </span>
+              </div>
+            </div>
+
+            {/* 2. Total Department Assets Count */}
+            <div className="p-4 rounded-xl bg-gray-50/70 border border-gray-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-700">Department Equipment</p>
+                <span className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
+                  <Boxes size={15} />
+                </span>
+              </div>
+              <h2 className="text-2xl font-extrabold text-gray-900 mt-2">
+                {deptValuationStats.assetCount} <span className="text-xs font-normal text-gray-500">units registered</span>
+              </h2>
+              <p className="text-[11px] font-medium text-emerald-700 mt-2 flex items-center gap-1">
+                <CheckCircle2 size={13} />
+                {deptValuationStats.activeCount} active ({deptValuationStats.assetCount > 0 ? Math.round((deptValuationStats.activeCount / deptValuationStats.assetCount) * 100) : 0}% operational)
+              </p>
+            </div>
+
+            {/* 3. Average Amount per Unit */}
+            <div className="p-4 rounded-xl bg-gray-50/70 border border-gray-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-700">Average Value / Unit</p>
+                <span className="p-1.5 bg-purple-100 text-purple-700 rounded-lg">
+                  <TrendingUp size={15} />
+                </span>
+              </div>
+              <h2 className="text-2xl font-extrabold text-purple-800 mt-2 truncate" title={formatCurrency(deptValuationStats.avgAmount)}>
+                {formatCurrency(deptValuationStats.avgAmount)}
+              </h2>
+              <p className="text-[11px] text-gray-500 mt-2">
+                Mean capital allocation per asset
+              </p>
+            </div>
+
+            {/* 4. Top Valued Equipment */}
+            <div className="p-4 rounded-xl bg-gray-50/70 border border-gray-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-700">Highest Valued Asset</p>
+                <span className="p-1.5 bg-amber-100 text-amber-700 rounded-lg">
+                  <Sparkles size={15} />
+                </span>
+              </div>
+              <h4 className="text-sm font-bold text-gray-900 mt-2 truncate" title={deptValuationStats.highestAsset?.assetName || 'No equipment registered'}>
+                {deptValuationStats.highestAsset?.assetName || 'No assets recorded'}
+              </h4>
+              <p className="text-xs font-bold text-amber-700 mt-1">
+                {deptValuationStats.highestAsset?.totalAmount ? formatCurrency(deptValuationStats.highestAsset.totalAmount) : 'RM 0'}
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Filter Action Footer */}
+          {selectedValuationDept !== 'ALL' && (
+            <div className="mt-4 pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span className="text-xs text-gray-600">
+                Currently showing valuation for <strong className="text-blue-800 font-semibold">{selectedValuationDept}</strong> ({deptValuationStats.assetCount} asset{deptValuationStats.assetCount === 1 ? '' : 's'} recorded)
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchTerm(selectedValuationDept);
+                    setCurrentPage(1);
+                  }}
+                  className="h-8 text-xs font-medium text-blue-700 border-blue-200 hover:bg-blue-50 flex items-center gap-1.5"
+                >
+                  Filter Equipment Table by "{selectedValuationDept}"
+                  <ArrowRight size={13} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedValuationDept('ALL')}
+                  className="h-8 text-xs text-gray-500 hover:text-gray-800"
+                >
+                  Reset to All
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 30-Day Alert Banner Section */}
       {(stats.warrantyExpiringSoon > 0 || stats.ppmDueSoon > 0 || stats.licenseExpiringSoon > 0) && (
