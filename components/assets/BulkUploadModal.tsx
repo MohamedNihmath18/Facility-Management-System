@@ -85,9 +85,16 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
         return;
       }
 
-      // Existing asset numbers lookup set
+      // Existing assets lookup sets (by Serial Number and Asset No)
+      const existingSerialSet = new Set(
+        existingAssets
+          .filter(a => a.serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN'].includes(String(a.serialNumber).trim().toUpperCase()))
+          .map(a => String(a.serialNumber).trim().toUpperCase())
+      );
       const existingNoSet = new Set(
-        existingAssets.map(a => String(a.assetNo || '').trim().toUpperCase())
+        existingAssets
+          .filter(a => a.assetNo)
+          .map(a => String(a.assetNo).trim().toUpperCase())
       );
 
       const seenInFile = new Set<string>();
@@ -109,23 +116,47 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           return '';
         };
 
-        const rawAssetNo = getVal('Asset No.', 'Asset No', 'assetNo', 'Asset Number', 'asset_no');
-        const assetNo = String(rawAssetNo || '').trim();
-        const assetName = String(getVal('Asset Name', 'assetName', 'Equipment Name') || `Asset ${index + 1}`).trim();
+        const rawAssetNo = getVal(
+          'Asset No.', 'Asset No', 'assetNo', 'Asset Number', 'asset_no', 
+          'Asset ID', 'Asset Tag', 'Tag No', 'Tag Number', 'Asset Code', 'Item Code', 'Barcode', 'Code'
+        );
+        const rawSerial = getVal(
+          'Serial Number', 'serialNumber', 'Serial No.', 'Serial No', 'Serial', 'S/N', 'SN', 'serial_number', 'Serial #'
+        );
+        const rawAssetName = getVal(
+          'Asset Name', 'assetName', 'Equipment Name', 'Item Name', 'Description', 'Asset Description', 'Name'
+        );
 
-        if (!assetNo) return; // Skip row without Asset No
+        const serialNumber = String(rawSerial || '').trim();
+        const hasValidSerial = serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN'].includes(serialNumber.toUpperCase());
 
-        const normalizedNo = assetNo.toUpperCase();
+        let assetNo = String(rawAssetNo || '').trim();
+        // If assetNo is missing or empty, DO NOT skip row! Auto-generate asset identifier from serial number or index
+        if (!assetNo) {
+          if (hasValidSerial) {
+            assetNo = `AST-${serialNumber}`;
+          } else {
+            assetNo = `AST-${String(index + 1).padStart(5, '0')}`;
+          }
+        }
 
-        if (seenInFile.has(normalizedNo)) {
-          duplicatesInFile.push(assetNo);
+        const assetName = String(rawAssetName || `Asset ${index + 1}`).trim();
+
+        // Check for duplicates inside the file based primarily on unique Serial Number (or Asset No if no serial)
+        const dedupeKey = hasValidSerial 
+          ? `SN:${serialNumber.toUpperCase()}` 
+          : `NO:${assetNo.toUpperCase()}`;
+
+        if (seenInFile.has(dedupeKey)) {
+          duplicatesInFile.push(hasValidSerial ? `SN: ${serialNumber}` : `No: ${assetNo}`);
           return;
         }
-        seenInFile.add(normalizedNo);
+        seenInFile.add(dedupeKey);
 
-        const isDuplicateWithSystem = existingNoSet.has(normalizedNo);
+        const isDuplicateWithSystem = (hasValidSerial && existingSerialSet.has(serialNumber.toUpperCase())) ||
+                                      (assetNo && existingNoSet.has(assetNo.toUpperCase()));
         if (isDuplicateWithSystem) {
-          duplicateWithSystem.push(assetNo);
+          duplicateWithSystem.push(hasValidSerial ? `SN: ${serialNumber}` : `No: ${assetNo}`);
         }
 
         const formatDateVal = (val: any) => {
@@ -135,13 +166,13 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           return isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
         };
 
-        const totalAmountVal = Number(getVal('Total Amount', 'totalAmount', 'Amount', 'Cost')) || 0;
+        const totalAmountVal = Number(getVal('Total Amount', 'totalAmount', 'Amount', 'Cost', 'Price', 'Value')) || 0;
 
         cleanedRows.push({
           no: Number(getVal('No.', 'No', 'Index') || cleanedRows.length + 1),
           assetName,
           assetNo,
-          serialNumber: String(getVal('Serial Number', 'serialNumber', 'SN') || '').trim(),
+          serialNumber,
           model: String(getVal('Model', 'model') || '').trim(),
           manufacturerName: String(getVal('Manufacturer Name', 'manufacturerName', 'Manufacturer') || '').trim(),
           supplierName: String(getVal('Supplier Name', 'supplierName', 'Supplier') || '').trim(),
@@ -332,7 +363,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                     {summary.duplicateCount}
                   </p>
                   <p className="text-[11px] text-amber-600 mt-0.5">
-                    {summary.duplicateCount > 0 ? 'Duplicate Asset Nos found' : 'No duplicates detected'}
+                    {summary.duplicateCount > 0 ? 'Duplicate Serial / Asset IDs' : 'No duplicates detected'}
                   </p>
                 </div>
               </div>
@@ -461,9 +492,9 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-600 flex items-start gap-2 border">
             <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-gray-800">Duplicate Protection Guarantee</p>
+              <p className="font-semibold text-gray-800">Unique Identification & Duplicate Protection</p>
               <p className="mt-0.5">
-                Every asset is uniquely identified by its <strong>Asset No.</strong> If you upload 1,000+ assets today and another spreadsheet next week with overlapping items, selecting "Skip Duplicates" prevents duplicate entries and ensures zero system clashes.
+                Every asset is uniquely identified by its <strong>Serial Number</strong> (or Asset No). Selecting "Skip Duplicates" prevents duplicate entries and ensures zero system clashes, while "Update" syncs existing records.
               </p>
             </div>
           </div>

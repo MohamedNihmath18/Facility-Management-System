@@ -25,10 +25,17 @@ interface DepartmentAssetsSectionProps {
 }
 
 export const DepartmentAssetsSection: React.FC<DepartmentAssetsSectionProps> = ({
-  assets,
+  assets: rawAssets,
   userDepartment = '',
   userName
 }) => {
+  const assets: Asset[] = useMemo(() => {
+    if (Array.isArray(rawAssets)) return rawAssets;
+    if (rawAssets && typeof rawAssets === 'object' && Array.isArray((rawAssets as any).assets)) {
+      return (rawAssets as any).assets;
+    }
+    return [];
+  }, [rawAssets]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAssetForDetail, setSelectedAssetForDetail] = useState<Asset | null>(null);
   const [selectedAssetForDocs, setSelectedAssetForDocs] = useState<Asset | null>(null);

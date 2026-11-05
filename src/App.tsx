@@ -589,7 +589,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user, a
               <CardTitle className="text-base font-semibold">Tickets by Category</CardTitle>
             </CardHeader>
             <CardContent className="min-h-[300px] h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                 <BarChart data={categoryData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
@@ -609,7 +609,7 @@ const Dashboard = ({ stats, requests = [], orders = [], onSelectRequest, user, a
               <CardTitle className="text-base font-semibold">SLA Compliance</CardTitle>
             </CardHeader>
             <CardContent className="min-h-[300px] h-[300px] flex flex-col items-center justify-center">
-              <ResponsiveContainer width="100%" height="80%">
+              <ResponsiveContainer width="100%" height="80%" minWidth={0} minHeight={200}>
                 <PieChart>
                   <Pie
                     data={slaData}
@@ -2514,7 +2514,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
         </CardHeader>
         <CardContent className="min-h-[400px] h-auto">
           <div className="h-[350px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
             <LineChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} />
@@ -2549,7 +2549,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
             <CardTitle className="text-base font-semibold">Tickets by Category</CardTitle>
           </CardHeader>
           <CardContent className="min-h-[300px] h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
               <PieChart>
                 <Pie
                   data={categoryData}
@@ -2576,7 +2576,7 @@ const ReportsView = ({ stats, requests, orders, user }: { stats: Stats, requests
           </CardHeader>
           <CardContent className="min-h-[400px] h-auto">
             <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
               <BarChart data={[{ name: 'On Time', value: stats.closed }, { name: 'Delayed', value: stats.total - stats.closed }]}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} />
@@ -3329,13 +3329,16 @@ export default function App() {
       const saved = localStorage.getItem('mahsa_assets');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
+        const list = Array.isArray(parsed) 
+          ? parsed 
+          : (Array.isArray(parsed?.assets) ? parsed.assets : []);
+        if (Array.isArray(list)) {
           // Remove any dummy sample assets that may have been saved earlier
-          const clean = parsed.filter((a: any) => 
+          const clean = list.filter((a: any) => 
             !['AST-MED-001', 'AST-MED-002', 'AST-MED-003', 'AST-FAC-001', 'AST-ELE-001', 'AST-MED-004'].includes(a.assetNo) &&
             !String(a._id || '').startsWith('ast-med-00')
           );
-          if (clean.length !== parsed.length) {
+          if (clean.length !== list.length || !Array.isArray(parsed)) {
             localStorage.setItem('mahsa_assets', JSON.stringify(clean));
           }
           return clean;
@@ -3364,8 +3367,9 @@ export default function App() {
       });
       if (res.ok) {
         const saved = await res.json();
-        setAssets(prev => [saved, ...prev]);
-        localStorage.setItem('mahsa_assets', JSON.stringify([saved, ...assets]));
+        setAssets(prev => [saved, ...(Array.isArray(prev) ? prev : [])]);
+        const currentList = Array.isArray(assets) ? assets : [];
+        localStorage.setItem('mahsa_assets', JSON.stringify([saved, ...currentList]));
         toast.success(`Asset "${newAssetData.assetName}" created successfully!`);
         return;
       }
@@ -3373,8 +3377,9 @@ export default function App() {
       console.log('Backend assets not available, saved locally');
     }
 
-    setAssets(prev => [newAsset, ...prev]);
-    localStorage.setItem('mahsa_assets', JSON.stringify([newAsset, ...assets]));
+    setAssets(prev => [newAsset, ...(Array.isArray(prev) ? prev : [])]);
+    const currentList = Array.isArray(assets) ? assets : [];
+    localStorage.setItem('mahsa_assets', JSON.stringify([newAsset, ...currentList]));
     toast.success(`Asset "${newAssetData.assetName}" created!`);
   };
 
@@ -3388,7 +3393,8 @@ export default function App() {
     } catch (e) {
       console.log('Backend assets not available, saved locally');
     }
-    const nextList = assets.map(a => a._id === updatedAsset._id ? updatedAsset : a);
+    const currentList = Array.isArray(assets) ? assets : [];
+    const nextList = currentList.map(a => a._id === updatedAsset._id ? updatedAsset : a);
     setAssets(nextList);
     localStorage.setItem('mahsa_assets', JSON.stringify(nextList));
     toast.success(`Asset "${updatedAsset.assetName}" updated!`);
@@ -3400,7 +3406,8 @@ export default function App() {
     } catch (e) {
       console.log('Backend assets not available, deleted locally');
     }
-    const filtered = assets.filter(a => a._id !== id);
+    const currentList = Array.isArray(assets) ? assets : [];
+    const filtered = currentList.filter(a => a._id !== id);
     setAssets(filtered);
     localStorage.setItem('mahsa_assets', JSON.stringify(filtered));
     toast.success('Asset deleted successfully');
@@ -3415,12 +3422,15 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        const assetsRes = await fetch(`${API_BASE_URL}/api/assets?limit=2000`);
+        const assetsRes = await fetch(`${API_BASE_URL}/api/assets?limit=10000`);
         if (assetsRes.ok) {
           const fresh = await assetsRes.json();
-          setAssets(fresh);
-          localStorage.setItem('mahsa_assets', JSON.stringify(fresh));
-          toast.success(`Bulk upload complete! ${data.insertedCount || 0} added, ${data.updatedCount || 0} updated.`);
+          const list: Asset[] = Array.isArray(fresh) 
+            ? fresh 
+            : (Array.isArray(fresh?.assets) ? fresh.assets : []);
+          setAssets(list);
+          localStorage.setItem('mahsa_assets', JSON.stringify(list));
+          toast.success(`Bulk upload complete! ${data.insertedCount || 0} inserted, ${data.updatedCount || 0} updated (${list.length} total assets).`);
           return;
         }
       }
@@ -3428,14 +3438,24 @@ export default function App() {
       console.log('Backend assets not available, saving locally');
     }
 
-    let resultList = [...assets];
+    const currentAssets = Array.isArray(assets) ? assets : [];
+    let resultList = [...currentAssets];
     if (strategy === 'skip') {
-      const existingNoSet = new Set(assets.map(a => String(a.assetNo || '').trim().toUpperCase()));
+      const existingNoSet = new Set(currentAssets.map(a => String(a.assetNo || '').trim().toUpperCase()));
+      const existingSerialSet = new Set(
+        currentAssets
+          .filter(a => a.serialNumber && a.serialNumber.trim() && !['N/A', 'NA', '-', 'NONE'].includes(a.serialNumber.trim().toUpperCase()))
+          .map(a => a.serialNumber!.trim().toUpperCase())
+      );
       const toAdd: Asset[] = [];
       uploadedAssets.forEach((item, idx) => {
         const normKey = String(item.assetNo || '').trim().toUpperCase();
-        if (!existingNoSet.has(normKey)) {
-          existingNoSet.add(normKey);
+        const normSerial = String(item.serialNumber || '').trim().toUpperCase();
+        const isDup = (normSerial && !['N/A', 'NA', '-', 'NONE'].includes(normSerial) && existingSerialSet.has(normSerial)) ||
+                      (normKey && existingNoSet.has(normKey));
+        if (!isDup) {
+          if (normKey) existingNoSet.add(normKey);
+          if (normSerial) existingSerialSet.add(normSerial);
           toAdd.push({
             ...item,
             _id: `ast-bulk-${Date.now()}-${idx}`,
@@ -3448,17 +3468,26 @@ export default function App() {
       toast.success(`Bulk upload processed: ${toAdd.length} new assets added.`);
     } else {
       const updatedMap = new Map<string, Asset>();
-      assets.forEach(a => updatedMap.set(String(a.assetNo || '').trim().toUpperCase(), a));
+      currentAssets.forEach(a => {
+        const key = a.serialNumber && !['N/A', 'NA', '-', 'NONE'].includes(a.serialNumber.trim().toUpperCase())
+          ? `SN:${a.serialNumber.trim().toUpperCase()}`
+          : `NO:${String(a.assetNo || '').trim().toUpperCase()}`;
+        updatedMap.set(key, a);
+      });
 
       uploadedAssets.forEach((item, idx) => {
-        const normKey = String(item.assetNo || '').trim().toUpperCase();
-        const existing = updatedMap.get(normKey);
-        updatedMap.set(normKey, {
+        const normSerial = String(item.serialNumber || '').trim().toUpperCase();
+        const normNo = String(item.assetNo || '').trim().toUpperCase();
+        const key = normSerial && !['N/A', 'NA', '-', 'NONE'].includes(normSerial)
+          ? `SN:${normSerial}`
+          : `NO:${normNo}`;
+        const existing = updatedMap.get(key);
+        updatedMap.set(key, {
           ...existing,
           ...item,
           _id: existing?._id || `ast-bulk-${Date.now()}-${idx}`,
           updatedAt: new Date().toISOString()
-        });
+        } as Asset);
       });
       resultList = Array.from(updatedMap.values());
       toast.success(`Bulk upload processed: ${resultList.length} total assets.`);
@@ -3471,10 +3500,11 @@ export default function App() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [statsRes, requestsRes, ordersRes] = await Promise.all([
+      const [statsRes, requestsRes, ordersRes, assetsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/stats`),
         fetch(`${API_BASE_URL}/api/work-requests`),
-        fetch(`${API_BASE_URL}/api/work-orders`)
+        fetch(`${API_BASE_URL}/api/work-orders`),
+        fetch(`${API_BASE_URL}/api/assets?limit=10000`).catch(() => null)
       ]);
       const statsData = await statsRes.json();
       const requestsData = await requestsRes.json();
@@ -3502,6 +3532,20 @@ export default function App() {
         console.error('Orders Data is not an array:', ordersData);
         setOrders([]);
         if (ordersData.error) toast.error(`Failed to load orders: ${ordersData.details || ordersData.error}`);
+      }
+
+      if (assetsRes && assetsRes.ok) {
+        try {
+          const assetsData = await assetsRes.json();
+          const list: Asset[] = Array.isArray(assetsData) 
+            ? assetsData 
+            : (Array.isArray(assetsData?.assets) ? assetsData.assets : []);
+          setAssets(list);
+          localStorage.setItem('mahsa_assets', JSON.stringify(list));
+          console.log(`📦 Loaded ${list.length} assets from server`);
+        } catch (assetErr) {
+          console.error('Failed to parse assets response', assetErr);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch data:', err);

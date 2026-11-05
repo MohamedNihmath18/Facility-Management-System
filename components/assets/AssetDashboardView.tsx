@@ -60,12 +60,20 @@ interface AssetDashboardViewProps {
 }
 
 export const AssetDashboardView: React.FC<AssetDashboardViewProps> = ({
-  assets,
+  assets: rawAssets,
   onAddAsset,
   onUpdateAsset,
   onDeleteAsset,
   onBulkUpload
 }) => {
+  // Ensure assets is always an array to prevent any .forEach / .filter / .map TypeError
+  const assets: Asset[] = useMemo(() => {
+    if (Array.isArray(rawAssets)) return rawAssets;
+    if (rawAssets && typeof rawAssets === 'object' && Array.isArray((rawAssets as any).assets)) {
+      return (rawAssets as any).assets;
+    }
+    return [];
+  }, [rawAssets]);
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
