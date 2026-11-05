@@ -7,22 +7,35 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   X, 
-  RefreshCw,
-  Info,
-  Check,
-  FileCheck
+  RefreshCw, 
+  Info, 
+  Check, 
+  FileCheck,
+  ChevronDown,
+  ChevronUp,
+  FileText
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Asset } from './types';
-import { downloadAssetTemplate, EXACT_HEADERS } from './sampleTemplate';
+import { downloadAssetTemplate } from './sampleTemplate';
 
 interface BulkUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   existingAssets: Asset[];
-  onSuccess: (newAssets: Asset[], strategy: 'skip' | 'update' | 'replace') => Promise<void>;
+  onSuccess: (newAssets: Asset[], strategy: 'skip' | 'update' | 'replace', allowDuplicates?: boolean) => Promise<void>;
+}
+
+export interface SkippedItem {
+  excelRow: number;
+  assetName: string;
+  assetNo: string;
+  serialNumber: string;
+  department?: string;
+  category?: string;
+  reason: string;
 }
 
 interface ParsedSummary {
@@ -31,6 +44,7 @@ interface ParsedSummary {
   duplicateCount: number;
   duplicatesInFileCount: number;
   duplicateAssetNos: string[];
+  skippedItems: SkippedItem[];
   sampleParsed: any[];
 }
 
@@ -44,24 +58,59 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [duplicateStrategy, setDuplicateStrategy] = useState<'skip' | 'update' | 'replace'>('update');
   const [parsedData, setParsedData] = useState<any[]>([]);
+  const [rawCleanedRows, setRawCleanedRows] = useState<any[]>([]);
+  const [allProcessedRows, setAllProcessedRows] = useState<any[]>([]);
+  const [allowDuplicates, setAllowDuplicates] = useState(false);
   const [summary, setSummary] = useState<ParsedSummary | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showDuplicatesList, setShowDuplicatesList] = useState(false);
+  const [showSkippedModal, setShowSkippedModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetState = () => {
     setFile(null);
     setParsedData([]);
+    setRawCleanedRows([]);
+    setAllProcessedRows([]);
+    setAllowDuplicates(false);
     setSummary(null);
     setIsProcessing(false);
     setUploading(false);
     setShowDuplicatesList(false);
+    setShowSkippedModal(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleClose = () => {
     resetState();
     onClose();
+  };
+
+  const handleToggleAllowDuplicates = (checked: boolean) => {
+    setAllowDuplicates(checked);
+    if (checked) {
+      setParsedData(allProcessedRows);
+    } else {
+      setParsedData(rawCleanedRows);
+    }
+  };
+
+  const exportSkippedReport = () => {
+    if (!summary || summary.skippedItems.length === 0) return;
+    const exportData = summary.skippedItems.map(item => ({
+      'Excel Row #': item.excelRow,
+      'Asset Description': item.assetName,
+      'Asset No.': item.assetNo,
+      'Serial Number': item.serialNumber,
+      'Department': item.department || '-',
+      'Category': item.category || '-',
+      'Reason Removed / Duplicate Diagnosis': item.reason
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Skipped_Duplicates_Report');
+    const fileName = file?.name ? file.name.replace(/\.[^/.]+$/, "") : 'Assets';
+    XLSX.writeFile(wb, `Skipped_Duplicates_Report_${fileName}.xlsx`);
   };
 
   const normalizeKey = (key: string) => {
@@ -96,13 +145,16 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           .map(a => `${String(a.assetNo || '').trim().toUpperCase()}|||${String(a.assetName || '').trim().toUpperCase()}`)
       );
 
-      const seenSerialsInFile = new Set<string>();
-      const seenExactInFile = new Set<string>();
-      const duplicatesInFile: string[] = [];
+      const seenSerialsMap = new Map<string, { excelRow: number; assetName: string; assetNo: string }>();
+      const seenExactMap = new Map<string, { excelRow: number; assetName: string; assetNo: string }>();
+      const skippedItems: SkippedItem[] = [];
       const duplicateWithSystem: string[] = [];
       const cleanedRows: any[] = [];
+      const allRows: any[] = [];
 
       rawRows.forEach((row, index) => {
+        const excelRow = index + 2; // Row 1 is header in Excel
+
         // Dynamic key mapper to handle minor spelling or casing differences
         const getVal = (exactKey: string, ...aliases: string[]) => {
           if (row[exactKey] !== undefined && row[exactKey] !== '') return row[exactKey];
@@ -124,7 +176,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           'Serial Number', 'serialNumber', 'Serial No.', 'Serial No', 'Serial', 'S/N', 'SN', 'serial_number', 'Serial #'
         );
         const rawAssetName = getVal(
-          'Asset Description', 'Asset Name', 'assetName', 'Equipment Name', 'Item Name', 'Description', 'Asset Description', 'Name'
+          'Asset Description', 'Asset Name', 'assetName', 'Equipment Name', 'Item Name', 'Description', 'Name'
         );
 
         const serialNumber = String(rawSerial || '').trim();
@@ -143,33 +195,8 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
         }
 
         const assetName = String(rawAssetName || `Asset ${index + 1}`).trim();
-
-        // Check for duplicates inside the file:
-        // Only consider a row duplicate if it shares the exact same non-empty Serial Number
-        // or if both Asset No AND Asset Name are identical
-        if (hasValidSerial) {
-          const normSerial = serialNumber.toUpperCase();
-          if (seenSerialsInFile.has(normSerial)) {
-            duplicatesInFile.push(`SN: ${serialNumber}`);
-            return;
-          }
-          seenSerialsInFile.add(normSerial);
-        } else {
-          const exactKey = `${assetNo.toUpperCase()}|||${assetName.toUpperCase()}`;
-          if (seenExactInFile.has(exactKey)) {
-            duplicatesInFile.push(`Asset: ${assetNo} (${assetName})`);
-            return;
-          }
-          seenExactInFile.add(exactKey);
-        }
-
-        const isDuplicateWithSystem = hasValidSerial
-          ? existingSerialSet.has(serialNumber.toUpperCase())
-          : existingExactSet.has(`${assetNo.toUpperCase()}|||${assetName.toUpperCase()}`);
-
-        if (isDuplicateWithSystem) {
-          duplicateWithSystem.push(hasValidSerial ? `SN: ${serialNumber}` : `${assetNo} (${assetName})`);
-        }
+        const dept = String(getVal('Department', 'department', 'Location') || 'General').trim();
+        const category = String(getVal('Asset Category', 'assetCategory', 'Category') || 'Medical Equipment').trim();
 
         const formatDateVal = (val: any) => {
           if (!val) return undefined;
@@ -180,8 +207,8 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
 
         const totalAmountVal = Number(getVal('Total Amount', 'totalAmount', 'Amount', 'Cost', 'Price', 'Value')) || 0;
 
-        cleanedRows.push({
-          no: Number(getVal('No.', 'No', 'Index') || cleanedRows.length + 1),
+        const rowObject = {
+          no: Number(getVal('No.', 'No', 'Index') || (index + 1)),
           assetName,
           assetNo,
           serialNumber,
@@ -190,7 +217,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           supplierName: String(getVal('Supplier Name', 'supplierName', 'Supplier') || '').trim(),
           supplierContactNo: String(getVal('Supplier Contact No.', 'supplierContactNo', 'Contact') || '').trim(),
           location: String(getVal('Location', 'location', 'Department') || 'General').trim(),
-          department: String(getVal('Department', 'department', 'Location') || 'General').trim(),
+          department: dept,
           warrantyPeriod: String(getVal('Warranty Period', 'warrantyPeriod') || '').trim(),
           startOfWarranty: formatDateVal(getVal('Start of Warranty', 'startOfWarranty')),
           endOfWarranty: formatDateVal(getVal('End of Warranty', 'endOfWarranty')),
@@ -213,21 +240,75 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
           totalAmount: totalAmountVal,
           lifespan: String(getVal('Lifespan', 'lifespan') || '').trim(),
           assetCriticality: String(getVal('Asset Criticality', 'assetCriticality', 'Criticality') || 'Medium').trim(),
-          assetCategory: String(getVal('Asset Category', 'assetCategory', 'Category') || 'Medical Equipment').trim(),
+          assetCategory: category,
           typeOfEquipmentSafety: String(getVal('Type of Equipment Safety', 'typeOfEquipmentSafety', 'Safety Type') || 'Class I').trim(),
           status: String(getVal('Status', 'status') || 'Active').trim(),
           licenseEndDate: formatDateVal(getVal('License End Date', 'licenseEndDate', 'End of Warranty')),
           documents: []
-        });
+        };
+
+        allRows.push(rowObject);
+
+        // Check for duplicate inside file
+        let isDuplicateInFile = false;
+        let collisionReason = '';
+
+        if (hasValidSerial) {
+          const normSerial = serialNumber.toUpperCase();
+          const prev = seenSerialsMap.get(normSerial);
+          if (prev) {
+            isDuplicateInFile = true;
+            collisionReason = `Duplicate Serial Number '${serialNumber}' matches Excel Row #${prev.excelRow} ("${prev.assetName}", Asset No: ${prev.assetNo})`;
+          } else {
+            seenSerialsMap.set(normSerial, { excelRow, assetName, assetNo });
+          }
+        } else {
+          const exactKey = `${assetNo.toUpperCase()}|||${assetName.toUpperCase()}`;
+          const prev = seenExactMap.get(exactKey);
+          if (prev) {
+            isDuplicateInFile = true;
+            collisionReason = `Duplicate Asset No & Name matches Excel Row #${prev.excelRow} (Asset No: ${prev.assetNo})`;
+          } else {
+            seenExactMap.set(exactKey, { excelRow, assetName, assetNo });
+          }
+        }
+
+        if (isDuplicateInFile) {
+          skippedItems.push({
+            excelRow,
+            assetName,
+            assetNo,
+            serialNumber: serialNumber || 'N/A',
+            department: dept,
+            category,
+            reason: collisionReason
+          });
+          return; // Skip from cleanedRows
+        }
+
+        // Check duplicate against existing system database
+        const isDuplicateWithSystem = hasValidSerial
+          ? existingSerialSet.has(serialNumber.toUpperCase())
+          : existingExactSet.has(`${assetNo.toUpperCase()}|||${assetName.toUpperCase()}`);
+
+        if (isDuplicateWithSystem) {
+          duplicateWithSystem.push(hasValidSerial ? `SN: ${serialNumber}` : `${assetNo} (${assetName})`);
+        }
+
+        cleanedRows.push(rowObject);
       });
 
-      setParsedData(cleanedRows);
+      setRawCleanedRows(cleanedRows);
+      setAllProcessedRows(allRows);
+      setParsedData(allowDuplicates ? allRows : cleanedRows);
+
       setSummary({
         totalRows: rawRows.length,
         validNewCount: cleanedRows.length - duplicateWithSystem.length,
         duplicateCount: duplicateWithSystem.length,
-        duplicatesInFileCount: duplicatesInFile.length,
+        duplicatesInFileCount: skippedItems.length,
         duplicateAssetNos: duplicateWithSystem,
+        skippedItems,
         sampleParsed: cleanedRows.slice(0, 5)
       });
     } catch (err: any) {
@@ -255,7 +336,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
     if (parsedData.length === 0) return;
     setUploading(true);
     try {
-      await onSuccess(parsedData, duplicateStrategy);
+      await onSuccess(parsedData, duplicateStrategy, allowDuplicates);
       handleClose();
     } catch (err: any) {
       alert(`Bulk upload failed: ${err.message || 'Please try again'}`);
@@ -266,7 +347,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="w-[95vw] sm:max-w-3xl max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] sm:max-w-4xl max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -276,7 +357,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
               <div>
                 <DialogTitle className="text-xl font-bold">Bulk Asset Upload</DialogTitle>
                 <DialogDescription>
-                  Import 1,000+ assets with duplicate prevention & automated mapping
+                  Import 1,000+ assets with duplicate diagnostics, inspection & automated mapping
                 </DialogDescription>
               </div>
             </div>
@@ -326,7 +407,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                   All 34 Asset Fields Supported
                 </Badge>
                 <Badge variant="secondary" className="text-xs">
-                  Zero Duplicate Clashes
+                  Duplicate Diagnostics Included
                 </Badge>
               </div>
             </div>
@@ -355,52 +436,181 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                 </Button>
               </div>
 
-              {/* Analysis Summary Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-4 bg-white border rounded-xl shadow-xs">
-                  <p className="text-xs text-muted-foreground font-medium">Total Assets in File</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">{parsedData.length}</p>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Valid formatted rows</p>
+              {/* Analysis Summary 4-Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-white border rounded-xl shadow-xs">
+                  <p className="text-xs text-muted-foreground font-medium">Total Rows in File</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{summary.totalRows}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Scanned rows</p>
                 </div>
 
-                <div className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-xl">
-                  <p className="text-xs text-emerald-700 font-medium">New Unique Assets</p>
-                  <p className="text-2xl font-bold text-emerald-700 mt-1">{summary.validNewCount}</p>
-                  <p className="text-[11px] text-emerald-600 mt-0.5">Will be newly added</p>
+                <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl">
+                  <p className="text-xs text-emerald-700 font-medium">Valid Assets to Import</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1">{parsedData.length}</p>
+                  <p className="text-[11px] text-emerald-600 mt-0.5">
+                    {allowDuplicates ? 'All rows included' : 'Filtered & clean'}
+                  </p>
                 </div>
 
-                <div className={`p-4 rounded-xl border ${summary.duplicateCount > 0 ? 'bg-amber-50/60 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
-                  <p className="text-xs text-amber-700 font-medium">Existing in System</p>
-                  <p className={`text-2xl font-bold mt-1 ${summary.duplicateCount > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
+                <div className={`p-3 rounded-xl border ${summary.skippedItems.length > 0 ? 'bg-amber-50/60 border-amber-300' : 'bg-gray-50 border-gray-200'}`}>
+                  <p className="text-xs text-amber-800 font-medium">Duplicates in File</p>
+                  <p className={`text-2xl font-bold mt-1 ${summary.skippedItems.length > 0 ? 'text-amber-800' : 'text-gray-500'}`}>
+                    {summary.skippedItems.length}
+                  </p>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    {summary.skippedItems.length > 0 ? 'Collisions identified' : 'Zero collisions'}
+                  </p>
+                </div>
+
+                <div className={`p-3 rounded-xl border ${summary.duplicateCount > 0 ? 'bg-purple-50/60 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
+                  <p className="text-xs text-purple-700 font-medium">Existing in System</p>
+                  <p className={`text-2xl font-bold mt-1 ${summary.duplicateCount > 0 ? 'text-purple-700' : 'text-gray-500'}`}>
                     {summary.duplicateCount}
                   </p>
-                  <p className="text-[11px] text-amber-600 mt-0.5">
-                    {summary.duplicateCount > 0 ? 'Duplicate Serial / Asset IDs' : 'No duplicates detected'}
+                  <p className="text-[11px] text-purple-600 mt-0.5">
+                    {summary.duplicateCount > 0 ? 'Already in database' : 'All brand new'}
                   </p>
                 </div>
               </div>
 
-              {/* Duplicate Handling Strategy */}
+              {/* Duplicate & Skipped Diagnosis Section */}
+              {summary.skippedItems.length > 0 && (
+                <div className="p-4 bg-amber-50/60 border border-amber-300 rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="text-amber-600 shrink-0" size={20} />
+                      <div>
+                        <h5 className="text-sm font-bold text-amber-900">
+                          {summary.skippedItems.length} Duplicate / Removed Rows Detected
+                        </h5>
+                        <p className="text-xs text-amber-800">
+                          These rows share existing Serial Numbers or identical identifiers with earlier rows in your file.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={exportSkippedReport}
+                        className="bg-white hover:bg-amber-100 border-amber-300 text-amber-900 text-xs h-8 flex items-center gap-1.5"
+                      >
+                        <Download size={13} />
+                        Export Report (.xlsx)
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setShowSkippedModal(!showSkippedModal)}
+                        className="text-amber-900 hover:bg-amber-100 text-xs h-8 flex items-center gap-1 font-semibold"
+                      >
+                        {showSkippedModal ? (
+                          <>Hide Rows <ChevronUp size={14} /></>
+                        ) : (
+                          <>Inspect Rows & Reasons <ChevronDown size={14} /></>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Toggle checkbox to force import everything */}
+                  <div className="pt-2 border-t border-amber-200/80 flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={allowDuplicates}
+                        onChange={(e) => handleToggleAllowDuplicates(e.target.checked)}
+                        className="rounded border-amber-400 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                      />
+                      <span className="text-xs font-semibold text-amber-950">
+                        Import all {summary.totalRows} rows anyway (bypass duplicate exclusion)
+                      </span>
+                    </label>
+                    <span className="text-[11px] text-amber-800 font-medium">
+                      {allowDuplicates ? `Ready to import all ${allProcessedRows.length} rows` : `${summary.skippedItems.length} duplicate rows excluded`}
+                    </span>
+                  </div>
+
+                  {/* Collapsible Inspection Table */}
+                  {showSkippedModal && (
+                    <div className="mt-2 border border-amber-200 bg-white rounded-lg overflow-hidden shadow-xs">
+                      <div className="p-2.5 bg-amber-100/60 border-b border-amber-200 flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                          <FileText size={14} className="text-amber-700" />
+                          Detailed Collision Log ({summary.skippedItems.length} Items)
+                        </span>
+                        <span className="text-[11px] text-amber-800">
+                          Edit these rows in your spreadsheet or check the bypass box above
+                        </span>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto divide-y divide-gray-100 text-xs">
+                        <table className="w-full text-left">
+                          <thead className="bg-gray-50 text-[11px] font-semibold text-gray-600 uppercase tracking-wider sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2">Excel Row</th>
+                              <th className="px-3 py-2">Asset Description</th>
+                              <th className="px-3 py-2">Asset No.</th>
+                              <th className="px-3 py-2">Serial Number</th>
+                              <th className="px-3 py-2">Department</th>
+                              <th className="px-3 py-2">Why It Was Flagged / Removed</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {summary.skippedItems.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-amber-50/40">
+                                <td className="px-3 py-2 font-mono font-bold text-amber-900 whitespace-nowrap">
+                                  Row #{item.excelRow}
+                                </td>
+                                <td className="px-3 py-2 font-semibold text-gray-900">
+                                  {item.assetName}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-gray-600 whitespace-nowrap">
+                                  {item.assetNo}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-gray-800 whitespace-nowrap">
+                                  <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[11px]">
+                                    {item.serialNumber}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                  {item.department || '-'}
+                                </td>
+                                <td className="px-3 py-2 text-amber-900 font-medium">
+                                  {item.reason}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Duplicate Handling Strategy for System Clashes */}
               {summary.duplicateCount > 0 && (
-                <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-xl space-y-3">
+                <div className="p-4 bg-purple-50/50 border border-purple-200 rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-amber-800 text-sm font-semibold">
-                      <AlertTriangle size={18} />
-                      Duplicate Resolution (Prevent Clashing)
+                    <div className="flex items-center gap-2 text-purple-900 text-sm font-semibold">
+                      <AlertTriangle size={18} className="text-purple-600" />
+                      Database Sync Strategy ({summary.duplicateCount} records already in system)
                     </div>
                     <button
                       type="button"
                       onClick={() => setShowDuplicatesList(!showDuplicatesList)}
-                      className="text-xs text-amber-700 underline font-medium hover:text-amber-900"
+                      className="text-xs text-purple-700 underline font-medium hover:text-purple-900"
                     >
                       {showDuplicatesList ? 'Hide duplicate list' : `View ${summary.duplicateCount} duplicate IDs`}
                     </button>
                   </div>
 
                   {showDuplicatesList && (
-                    <div className="max-h-28 overflow-y-auto p-2.5 bg-white/80 rounded-lg border border-amber-200 text-xs text-gray-700 flex flex-wrap gap-1.5">
+                    <div className="max-h-28 overflow-y-auto p-2.5 bg-white/80 rounded-lg border border-purple-200 text-xs text-gray-700 flex flex-wrap gap-1.5">
                       {summary.duplicateAssetNos.map(no => (
-                        <span key={no} className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-mono text-[11px]">
+                        <span key={no} className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded font-mono text-[11px]">
                           {no}
                         </span>
                       ))}
@@ -488,7 +698,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
               {/* Data Preview Table */}
               <div>
                 <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                  Sample Data Preview (First 5 Rows)
+                  Sample Data Preview (First 5 Rows to be imported)
                 </p>
                 <div className="border rounded-lg overflow-x-auto max-h-48 text-xs">
                   <table className="w-full divide-y divide-gray-200">
@@ -530,7 +740,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
             <div>
               <p className="font-semibold text-gray-800">Unique Identification & Duplicate Protection</p>
               <p className="mt-0.5">
-                Every asset is uniquely identified by its <strong>Serial Number</strong> (or Asset No). Selecting "Skip Duplicates" prevents duplicate entries and ensures zero system clashes, while "Update" syncs existing records.
+                Every asset is uniquely identified by its <strong>Serial Number</strong>. Duplicates within the spreadsheet are automatically isolated with clear Excel row numbers so you can edit and resolve them before importing.
               </p>
             </div>
           </div>

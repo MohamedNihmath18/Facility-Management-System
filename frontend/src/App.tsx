@@ -3413,12 +3413,12 @@ export default function App() {
     toast.success('Asset deleted successfully');
   };
 
-  const handleBulkUpload = async (uploadedAssets: Partial<Asset>[], strategy: 'skip' | 'update' | 'replace') => {
+  const handleBulkUpload = async (uploadedAssets: Partial<Asset>[], strategy: 'skip' | 'update' | 'replace', allowDuplicates: boolean = false) => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/assets/bulk-upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assets: uploadedAssets, duplicateStrategy: strategy })
+        body: JSON.stringify({ assets: uploadedAssets, duplicateStrategy: strategy, allowDuplicates })
       });
       if (res.ok) {
         const data = await res.json();

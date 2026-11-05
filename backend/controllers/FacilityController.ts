@@ -817,12 +817,12 @@ export const deleteAsset = async (req: Request, res: Response) => {
 
 export const bulkUploadAssets = async (req: Request, res: Response) => {
   try {
-    const { assets = [], duplicateStrategy = 'skip' } = req.body;
+    const { assets = [], duplicateStrategy = 'skip', allowDuplicates = false } = req.body;
     if (!Array.isArray(assets) || assets.length === 0) {
       return res.status(400).json({ error: 'No assets provided for bulk upload' });
     }
 
-    console.log(`📦 Bulk upload received ${assets.length} items. Strategy: ${duplicateStrategy}`);
+    console.log(`📦 Bulk upload received ${assets.length} items. Strategy: ${duplicateStrategy}, allowDuplicates: ${allowDuplicates}`);
 
     // Clean and validate assets
     const cleanedAssets: any[] = [];
@@ -853,20 +853,22 @@ export const bulkUploadAssets = async (req: Request, res: Response) => {
       const assetName = rawAssetName ? String(rawAssetName).trim() : `Asset ${index + 1}`;
 
       // Check duplicates in file based on Serial Number (or Asset No + Name if no serial)
-      if (hasValidSerial) {
-        const normSerial = serialNumber.toUpperCase();
-        if (seenSerialsInFile.has(normSerial)) {
-          fileDuplicates.push(`Serial: ${serialNumber}`);
-          return; // Skip duplicate serial inside the same uploaded file
+      if (!allowDuplicates) {
+        if (hasValidSerial) {
+          const normSerial = serialNumber.toUpperCase();
+          if (seenSerialsInFile.has(normSerial)) {
+            fileDuplicates.push(`Serial: ${serialNumber}`);
+            return; // Skip duplicate serial inside the same uploaded file
+          }
+          seenSerialsInFile.add(normSerial);
+        } else {
+          const exactKey = `${assetNo.toUpperCase()}|||${assetName.toUpperCase()}`;
+          if (seenExactInFile.has(exactKey)) {
+            fileDuplicates.push(`Asset: ${assetNo} (${assetName})`);
+            return; // Skip duplicate inside the same uploaded file
+          }
+          seenExactInFile.add(exactKey);
         }
-        seenSerialsInFile.add(normSerial);
-      } else {
-        const exactKey = `${assetNo.toUpperCase()}|||${assetName.toUpperCase()}`;
-        if (seenExactInFile.has(exactKey)) {
-          fileDuplicates.push(`Asset: ${assetNo} (${assetName})`);
-          return; // Skip duplicate inside the same uploaded file
-        }
-        seenExactInFile.add(exactKey);
       }
 
       // Map fields cleanly
@@ -955,9 +957,9 @@ export const bulkUploadAssets = async (req: Request, res: Response) => {
           asset.serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(asset.serialNumber.toUpperCase())
         );
 
-        const isDup = hasValidSerial 
+        const isDup = !allowDuplicates && (hasValidSerial 
           ? existingSerials.has(asset.serialNumber.toUpperCase())
-          : existingExactSet.has(`${asset.assetNo.toUpperCase()}|||${asset.assetName.toUpperCase()}`);
+          : existingExactSet.has(`${asset.assetNo.toUpperCase()}|||${asset.assetName.toUpperCase()}`));
 
         if (isDup) {
           skippedCount++;
@@ -974,27 +976,32 @@ export const bulkUploadAssets = async (req: Request, res: Response) => {
       }
     } else {
       // 'update' strategy: Upsert each asset matching serialNumber (if available) or (assetNo + assetName)
-      const bulkOps = cleanedAssets.map(asset => {
-        const hasValidSerial = Boolean(
-          asset.serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(asset.serialNumber.toUpperCase())
-        );
+      if (allowDuplicates) {
+        const result = await Asset.insertMany(cleanedAssets, { ordered: false });
+        insertedCount = result.length;
+      } else {
+        const bulkOps = cleanedAssets.map(asset => {
+          const hasValidSerial = Boolean(
+            asset.serialNumber && !['N/A', 'NA', '-', 'NONE', 'NULL', 'UNKNOWN', 'N / A'].includes(asset.serialNumber.toUpperCase())
+          );
 
-        const filter = hasValidSerial
-          ? { serialNumber: asset.serialNumber }
-          : { assetNo: asset.assetNo, assetName: asset.assetName };
+          const filter = hasValidSerial
+            ? { serialNumber: asset.serialNumber }
+            : { assetNo: asset.assetNo, assetName: asset.assetName };
 
-        return {
-          updateOne: {
-            filter,
-            update: { $set: asset },
-            upsert: true
-          }
-        };
-      });
-      if (bulkOps.length > 0) {
-        const result = await Asset.bulkWrite(bulkOps);
-        insertedCount = (result.upsertedCount || 0) + (result.insertedCount || 0);
-        updatedCount = result.modifiedCount || 0;
+          return {
+            updateOne: {
+              filter,
+              update: { $set: asset },
+              upsert: true
+            }
+          };
+        });
+        if (bulkOps.length > 0) {
+          const result = await Asset.bulkWrite(bulkOps);
+          insertedCount = (result.upsertedCount || 0) + (result.insertedCount || 0);
+          updatedCount = result.modifiedCount || 0;
+        }
       }
     }
 
