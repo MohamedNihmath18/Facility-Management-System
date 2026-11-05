@@ -1,6 +1,6 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { User, WorkRequest, WorkOrder, Asset } from '../models/FacilityModels.ts';
+import { User, WorkRequest, WorkOrder, Category, Asset } from '../models/FacilityModels.ts';
 
 // --- Auth Controller ---
 export const login = async (req: Request, res: Response) => {
@@ -35,10 +35,11 @@ export const login = async (req: Request, res: Response) => {
 // --- User Controller ---
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    const users = await User.find().select('-password').sort({ createdAt: -1 }).lean();
     res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch users' });
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch users: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch users', details: err.message });
   }
 };
 
@@ -76,6 +77,20 @@ export const updateUser = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error(`❌ Update user error: ${err.message}`);
     res.status(500).json({ error: 'Failed to update user' });
+  }
+};
+
+export const deleteUser = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deletedUser = await User.findByIdAndDelete(id);
+    if (!deletedUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({ message: 'User deleted successfully' });
+  } catch (err: any) {
+    console.error(`❌ Delete user error: ${err.message}`);
+    res.status(500).json({ error: 'Failed to delete user' });
   }
 };
 
@@ -158,17 +173,58 @@ export const getStats = async (req: Request, res: Response) => {
 // --- Work Request Controller ---
 export const getAllWorkRequests = async (req: Request, res: Response) => {
   try {
-    const requests = await WorkRequest.find().sort({ createdAt: -1 });
+    console.log('🔍 Fetching all work requests...');
+    // Exclude large fields from list view to prevent 500 errors and speed up loading
+    const requests = await WorkRequest.find()
+      .select('-videoUrl -activities')
+      .sort({ createdAt: -1 })
+      .lean();
+    console.log(`✅ Found ${requests.length} work requests`);
     res.json(requests);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch work requests' });
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch work requests: ${err.message}`, err);
+    res.status(500).json({ error: 'Failed to fetch work requests', details: err.message });
+  }
+};
+
+export const getWorkRequestById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const request = await WorkRequest.findById(id).lean();
+    if (!request) return res.status(404).json({ error: 'Work Request not found' });
+    res.json(request);
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch work request ${req.params.id}: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch work request' });
   }
 };
 
 export const createWorkRequest = async (req: Request, res: Response) => {
   try {
-    const count = await WorkRequest.countDocuments();
-    const wrId = `WR-2026-${(count + 1).toString().padStart(3, '0')}`;
+    // Find the latest request to get the next number
+    const lastRequest = await WorkRequest.findOne().sort({ createdAt: -1 }).lean();
+    let nextNum = 1;
+    
+    if (lastRequest && lastRequest.wrId) {
+      const parts = lastRequest.wrId.split('-');
+      const lastNumStr = parts[parts.length - 1];
+      const lastNum = parseInt(lastNumStr);
+      if (!isNaN(lastNum)) {
+        nextNum = lastNum + 1;
+      }
+    }
+    
+    // Safety check for unique wrId
+    let wrId = `WR-2026-${nextNum.toString().padStart(3, '0')}`;
+    let exists = await WorkRequest.findOne({ wrId });
+    let safetyCounter = 0;
+    while (exists && safetyCounter < 10) {
+      nextNum++;
+      wrId = `WR-2026-${nextNum.toString().padStart(3, '0')}`;
+      exists = await WorkRequest.findOne({ wrId });
+      safetyCounter++;
+    }
+
     const newRequest = await WorkRequest.create({ 
       ...req.body, 
       wrId,
@@ -180,8 +236,21 @@ export const createWorkRequest = async (req: Request, res: Response) => {
       }]
     });
     res.status(201).json(newRequest);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create work request' });
+  } catch (err: any) {
+    console.error(`❌ Create work request error:`, err);
+    if (err.code === 11000) {
+      return res.status(409).json({ error: 'Conflict Error', details: 'A request with this ID already exists. Please try again.' });
+    }
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: 'Validation Error', details: err.message });
+    }
+    if (err.message && err.message.includes('maximum document size')) {
+      return res.status(413).json({ 
+        error: 'Payload too large', 
+        details: 'The combined size of attachments exceeds the MongoDB limit (16MB). Please use smaller files.' 
+      });
+    }
+    res.status(500).json({ error: 'Failed to create work request', details: err.message });
   }
 };
 
@@ -254,18 +323,26 @@ export const updateWorkRequest = async (req: Request, res: Response) => {
     }
 
     res.json(updatedRequest);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update work request' });
+  } catch (err: any) {
+    console.error(`❌ Update work request error:`, err);
+    if (err.message && err.message.includes('maximum document size')) {
+      return res.status(413).json({ 
+        error: 'Payload too large', 
+        details: 'The total size of attachments in this request exceeds the database limit. Please use smaller files.' 
+      });
+    }
+    res.status(500).json({ error: 'Failed to update work request', details: err.message });
   }
 };
 
 // --- Work Order Controller ---
 export const getAllWorkOrders = async (req: Request, res: Response) => {
   try {
-    const orders = await WorkOrder.find().sort({ createdAt: -1 });
+    const orders = await WorkOrder.find().sort({ createdAt: -1 }).lean();
     res.json(orders);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch work orders' });
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch work orders: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch work orders', details: err.message });
   }
 };
 
@@ -310,8 +387,17 @@ export const createWorkOrder = async (req: Request, res: Response) => {
       return res.status(200).json(updatedOrder);
     }
 
-    const count = await WorkOrder.countDocuments();
-    const woId = `WO-2026-${(count + 1).toString().padStart(3, '0')}`;
+    const lastOrder = await WorkOrder.findOne().sort({ woId: -1 });
+    let nextNum = 1;
+    
+    if (lastOrder && lastOrder.woId) {
+      const match = lastOrder.woId.match(/WO-\d+-(\d+)/);
+      if (match) {
+        nextNum = parseInt(match[1]) + 1;
+      }
+    }
+
+    const woId = `WO-2026-${nextNum.toString().padStart(3, '0')}`;
     const newOrder = await WorkOrder.create({ ...req.body, woId });
     
     // Update linked Work Request status and log activity
@@ -417,8 +503,56 @@ export const updateWorkOrder = async (req: Request, res: Response) => {
   }
 };
 
-// --- Asset Controller ---
+// --- Category Controller ---
+export const getAllCategories = async (req: Request, res: Response) => {
+  try {
+    const categories = await Category.find().sort({ name: 1 }).lean();
+    res.json(categories);
+  } catch (err: any) {
+    console.error(`❌ Failed to fetch categories: ${err.message}`);
+    res.status(500).json({ error: 'Failed to fetch categories', details: err.message });
+  }
+};
 
+export const createCategory = async (req: Request, res: Response) => {
+  try {
+    const newCategory = await Category.create(req.body);
+    res.status(201).json(newCategory);
+  } catch (err: any) {
+    if (err.code === 11000) {
+      return res.status(400).json({ error: 'Category already exists' });
+    }
+    res.status(500).json({ error: 'Failed to create category' });
+  }
+};
+
+export const deleteCategory = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await Category.findByIdAndDelete(id);
+    res.json({ message: 'Category deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete category' });
+  }
+};
+
+// --- Additional Work Request Controllers ---
+export const deleteWorkRequest = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await WorkRequest.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ error: 'Work Request not found' });
+    
+    // Also delete associated work order if exists
+    await WorkOrder.deleteOne({ wrId: deleted.wrId });
+    
+    res.json({ message: 'Work Request deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete work request' });
+  }
+};
+
+// --- Asset Controllers ---
 export const getAssetStats = async (req: Request, res: Response) => {
   try {
     const { department } = req.query;
@@ -865,4 +999,3 @@ export const deleteAssetDocument = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to delete document' });
   }
 };
-

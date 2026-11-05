@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import facilityRoutes from './routes/FacilityRoutes.ts';
-import { User, WorkRequest } from './models/FacilityModels.ts';
+import { User, WorkRequest, Category } from './models/FacilityModels.ts';
 
 dotenv.config();
 
@@ -90,9 +90,10 @@ async function startServer() {
   // API Routes
   app.use('/api', facilityRoutes);
 
-  // Seed Data Function (only creates default users if DB is completely empty)
+  // Seed Data Function (only creates default users and categories if DB collections are empty)
   async function seedData() {
     try {
+      // 1. Seed Users if empty
       const userCount = await User.countDocuments();
       console.log(`📊 Current user count: ${userCount}`);
       if (userCount === 0) {
@@ -129,6 +130,47 @@ async function startServer() {
           }
         ]);
         console.log('✅ Initial users seeded');
+      }
+
+      // 2. Seed Categories if empty
+      const catCount = await Category.countDocuments();
+      console.log(`📊 Current category count: ${catCount}`);
+      if (catCount === 0) {
+        console.log('🌱 Initializing system categories...');
+        const initialCategories = [
+          { name: 'Medical Equipment', description: 'Biomedical devices and clinical equipment' },
+          { name: 'HVAC', description: 'Air conditioning, ventilation, and chiller systems' },
+          { name: 'Electrical', description: 'Power supply, wiring, distribution panels, and lighting' },
+          { name: 'Plumbing', description: 'Water supply, drainage, sanitary fixtures, and piping' },
+          { name: 'IT Infrastructure', description: 'Hardware, networking, telephony, and access control' },
+          { name: 'Furniture', description: 'Beds, tables, cabinets, chairs, and office furniture' },
+          { name: 'Leakage', description: 'Water leakages, roof leaks, and pipe bursts' },
+          { name: 'Pneumatic Tube', description: 'Hospital pneumatic tube delivery station and carrier systems' },
+          { name: 'Card Access', description: 'Electronic door locks and access reader systems' },
+          { name: 'Medical Gas', description: 'Oxygen, nitrous oxide, medical air, and vacuum lines' },
+          { name: 'Door, Floor, Window, Paint, Ceiling', description: 'General building structural repairs and maintenance' },
+          { name: 'Lift & Escalator', description: 'Elevators, dumbwaiters, and passenger escalators' },
+          { name: 'Event', description: 'Audio-visual setup, event staging, and logistics' },
+          { name: 'Civil & Structural', description: 'Structural walls, roadways, masonry, and civil engineering' },
+          { name: 'Fire Protection', description: 'Fire alarms, smoke detectors, sprinklers, and extinguishers' }
+        ];
+
+        // Also sync any distinct categories from existing work requests
+        try {
+          const distinctFromWRs = await WorkRequest.distinct('category');
+          const existingNames = new Set(initialCategories.map(c => c.name));
+          for (const catName of distinctFromWRs) {
+            if (catName && !existingNames.has(catName)) {
+              initialCategories.push({ name: catName, description: `${catName} category` });
+              existingNames.add(catName);
+            }
+          }
+        } catch (e) {
+          console.warn('Could not read distinct categories from work requests');
+        }
+
+        await Category.insertMany(initialCategories);
+        console.log(`✅ Initialized ${initialCategories.length} categories`);
       }
     } catch (err: any) {
       console.error('❌ Seed data failed:', err.message);
